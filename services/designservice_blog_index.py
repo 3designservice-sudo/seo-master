@@ -99,8 +99,26 @@ async def update_blog_index(
         log.info("blog_index.update.already_present", slug=slug)
         return True
 
-    # 3. Build new card JS
-    service_label = article.service_label or "Блог"
+    # 3. Build new card JS — map roadmap service_label → site blog category
+    # (roadmap uses short names like "Ремонт квартир"; blog.html filter uses
+    # full names like "Ремонт квартир и домов". Mismatch broke category pills.)
+    _SERVICE_TO_BLOG_CATEGORY = {
+        "renovation": "Ремонт квартир и домов",
+        "design": "Дизайн интерьеров",
+        "architecture": "Архитектурное проектирование",
+        "construction": "Строительство домов",
+        "landscape": "Ландшафтный дизайн",
+        "supervision": "Авторский надзор",
+        "completion": "Комплектация объекта",
+        "furniture": "Мебель на заказ",
+        "european-furniture": "Европейская мебель",
+        "curtains": "Шторы и текстиль",
+        "plaster": "Декоративная штукатурка",
+        "panels": "Бамбуковые / SPC / WPC панели",
+        "flexstone": "Гибкий камень / керамика",
+    }
+    service_slug = (getattr(article, 'service', '') or '').lower()
+    service_label = _SERVICE_TO_BLOG_CATEGORY.get(service_slug, article.service_label or "Блог")
     title_short = article.h1
     excerpt = (article.meta_description or "")[:200]
     new_card_js = _build_card_js(
