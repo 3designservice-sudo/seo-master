@@ -129,29 +129,60 @@ def _build_messages(
 
 
 def _parse_draft(raw_reply: str) -> DesignserviceArticleDraft:
-    """Strict JSON parsing — strip code fences if present, then json.loads."""
+    """Extract HTML fragment from LLM reply.
+
+    Expected format (PR 9): markdown code-block with html inside:
+        ```html
+        <p>...</p>
+        <h2>...</h2>
+        ```
+
+    Fallbacks (in order):
+      1. Match ```html ... ``` fence
+      2. Match any ``` ... ``` fence
+      3. Use the whole reply if it looks like HTML (starts with '<')
+      4. Raise DesignserviceGenerationError otherwise
+    """
     text = raw_reply.strip()
-    # Remove ```json ... ``` wrapping if any
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
+
+    # 1. Look for ```html ... ```
+    m = re.search(r"```html\s*\n?(.*?)\n?```", text, re.DOTALL | re.IGNORECASE)
+    if m:
+        body_html = m.group(1).strip()
+    else:
+        # 2. Any fenced block
+        m = re.search(r"```[a-zA-Z]*\s*\n?(.*?)\n?```", text, re.DOTALL)
+        if m:
+            body_html = m.group(1).strip()
+        elif text.lstrip().startswith("<"):
+            # 3. Looks like raw HTML
+            body_html = text
+        else:
+            raise DesignserviceGenerationError(
+                f"LLM reply does not contain HTML or code-block: {text[:200]!r}"
+            )
+
+    if not body_html or "<" not in body_html:
         raise DesignserviceGenerationError(
-            f"LLM returned non-JSON: {exc.msg} at pos {exc.pos}"
-        ) from exc
-    if "body_html" not in payload or not isinstance(payload["body_html"], str):
-        raise DesignserviceGenerationError(
-            "JSON missing required field 'body_html' or wrong type"
+            f"Extracted body_html is empty or invalid: {body_html[:200]!r}"
         )
+
+    # Compute self-reported counts independently from extracted HTML.
+    # Validator will recount them anyway, but having them in draft is useful for logs.
+    text_plain = re.sub(r"<[^>]+>", " ", body_html)
+    word_count = len(re.findall(r"[А-Яа-яA-Za-zЁё0-9]+", text_plain))
+    h2_count = len(re.findall(r"<h2\b", body_html, re.IGNORECASE))
+    internal_links_count = len(re.findall(r'href="/[^"]', body_html))
+    external_links_count = len(re.findall(r'href="https?://(?!designservice\.group)', body_html))
+    faq_count = len(re.findall(r"<details\b", body_html, re.IGNORECASE))
+
     return DesignserviceArticleDraft(
-        body_html=payload["body_html"],
-        word_count=int(payload.get("word_count", 0) or 0),
-        h2_count=int(payload.get("h2_count", 0) or 0),
-        internal_links_count=int(payload.get("internal_links_count", 0) or 0),
-        external_links_count=int(payload.get("external_links_count", 0) or 0),
-        faq_count=int(payload.get("faq_count", 0) or 0),
+        body_html=body_html,
+        word_count=word_count,
+        h2_count=h2_count,
+        internal_links_count=internal_links_count,
+        external_links_count=external_links_count,
+        faq_count=faq_count,
     )
 
 
@@ -253,7 +284,7 @@ class DesignserviceArticleService:
         messages, meta = _build_messages(
             template, article, current_date_iso, retry_feedback
         )
-        max_tokens = int(meta.get("max_tokens", 12000))
+        max_tokens = int(meta.get("max_tokens", 16000))
         temperature = float(meta.get("temperature", 0.55))
 
         model_used, raw = await _call_openrouter(
