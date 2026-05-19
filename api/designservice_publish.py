@@ -73,19 +73,17 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
         ds_client = DesignserviceClient(http_client=http_client)
 
         try:
-            planned = await ds_client.get_planned(date="today", limit=1, sort="freq")
+            article = await ds_client.get_next_for_pipeline()
         except DesignserviceAPIError as exc:
-            log.error("designservice.publish.get_planned_failed", err=str(exc))
+            log.error("designservice.publish.get_next_failed", err=str(exc))
             return web.json_response(
-                {"status": "error", "stage": "get_planned", "error": str(exc)},
+                {"status": "error", "stage": "get_next_for_pipeline", "error": str(exc)},
                 status=500,
             )
 
-        if planned.count == 0:
+        if article is None:
             log.info("designservice.publish.nothing_planned", date=today_iso)
             return web.json_response({"status": "skipped", "reason": "no planned articles today"})
-
-        article = planned.articles[0]
         log.info(
             "designservice.publish.start",
             article_id=article.id,

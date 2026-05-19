@@ -140,6 +140,31 @@ class DesignserviceClient:
         data = await self._bot_api({"action": "stats"})
         return StatsResponse.model_validate(data)
 
+    async def get_next_for_pipeline(self) -> Article | None:
+        """Get next planned article for today WITH service rotation.
+
+        Server-side excludes services of the last 3 published articles from
+        the candidate pool. Falls back to highest-freq today's planned if no
+        rotation possible. Returns None if nothing planned today.
+        """
+        try:
+            data = await self._bot_api({"action": "get_next_for_pipeline"})
+        except DesignserviceArticleNotFound:
+            return None
+        article_data = data.get("article")
+        if not article_data:
+            return None
+        a = Article.model_validate(article_data)
+        log.info(
+            "designservice.get_next_for_pipeline",
+            article_id=a.id,
+            service=a.service,
+            excluded=data.get("recent_services_excluded"),
+            rotation=data.get("rotation_applied"),
+        )
+        return a
+
+
     # ---- write API ---------------------------------------------------------
 
     async def mark_status(
