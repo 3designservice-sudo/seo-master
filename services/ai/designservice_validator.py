@@ -133,6 +133,14 @@ class ValidationResult:
                 base += " ИСПРАВЬ: добавь конкретные числа (площадь, цены, сроки, проценты)."
             elif c.name == "faq_count":
                 base += " ИСПРАВЬ: точное число <details class=\"faq\"> должно совпадать с указанным."
+            elif c.name == "yoast_keyword_in_lead":
+                base += " ИСПРАВЬ: вставь первые 2-3 слова из h1 в <p class=art-lead> первый абзац (это focus_keyword для Yoast виджета)."
+            elif c.name == "yoast_keyword_in_h2":
+                base += " ИСПРАВЬ: одно из <h2> должно начинаться или содержать первые 2-3 слова из h1."
+            elif c.name == "yoast_keyword_in_description":
+                base += " ИСПРАВЬ: meta_description должно содержать первые 2-3 слова из h1 (например: 'Кто делает...')."
+            elif c.name == "description_length_yoast":
+                base += " ИСПРАВЬ: meta_description должно быть 100-180 символов. Текущий не подходит — расширь до диапазона."
             msgs.append(base)
         if self.humanizer_score < 0.85:
             msgs.append(
@@ -374,6 +382,66 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
         detail="первый абзац должен быть <p class=\"art-lead\">…</p> с TL;DR",
         actual=has_lead,
         expected=True,
+    ))
+
+    # ═══════════════════════════════════════════════════════════════════
+    # WIDGET-EQUIVALENT CHECKS (mirror aps_page_stats Yoast Content checks)
+    # Widget extracts focus_keyword as first 2-3 words of h1 — not kw_primary.
+    # ═══════════════════════════════════════════════════════════════════
+    # Compute Yoast's focus_keyword: first 2-3 content words of h1
+    h1_words = [w for w in re.findall(r"[А-Яа-яA-Za-zЁё0-9]+", article.h1 or "") if len(w) >= 3]
+    yoast_kw = " ".join(h1_words[:2]).lower() if len(h1_words) >= 2 else ""
+
+    # 16. Yoast keyword (h1 prefix) in art-lead first paragraph
+    lead_match = re.search(r'<p[^>]*class="[^"]*art-lead[^"]*"[^>]*>(.+?)</p>', body_html, re.IGNORECASE | re.DOTALL)
+    lead_text = re.sub(r"<[^>]+>", " ", lead_match.group(1)).lower() if lead_match else ""
+    lead_has_kw = bool(yoast_kw) and yoast_kw in lead_text
+    checks.append(ValidationCheck(
+        name="yoast_keyword_in_lead",
+        passed=lead_has_kw or not yoast_kw,
+        detail=f"первые слова h1 '{yoast_kw}' должны быть в первом абзаце <p class=art-lead>",
+        actual="present" if lead_has_kw else "missing",
+        expected="present",
+    ))
+
+    # 17. Yoast keyword (h1 prefix) in at least one h2
+    h2_texts = [re.sub(r"<[^>]+>", " ", m).lower() for m in re.findall(r"<h2[^>]*>(.+?)</h2>", body_html, re.IGNORECASE | re.DOTALL)]
+    h2_with_kw = any(yoast_kw in t for t in h2_texts) if yoast_kw else True
+    checks.append(ValidationCheck(
+        name="yoast_keyword_in_h2",
+        passed=h2_with_kw or not yoast_kw,
+        detail=f"первые слова h1 '{yoast_kw}' должны быть хотя бы в одном <h2>",
+        actual=sum(1 for t in h2_texts if yoast_kw in t) if yoast_kw else "n/a",
+        expected=">= 1 h2 contains",
+    ))
+
+    # Compute final (post-extension) description as render_article would do
+    try:
+        from services.seo.designservice_html import _ensure_description_length
+        final_desc = _ensure_description_length(
+            article.meta_description, article.h1, article.kw_primary or ""
+        )
+    except Exception:
+        final_desc = article.meta_description or ""
+
+    # 18. Description 100-180 chars (Yoast) — checks the FINAL extended version
+    desc_len = len(final_desc)
+    checks.append(ValidationCheck(
+        name="description_length_yoast",
+        passed=100 <= desc_len <= 180,
+        detail="meta_description (после авто-расширения) должно быть 100-180 символов",
+        actual=desc_len,
+        expected="100-180",
+    ))
+
+    # 19. Yoast keyword in description (final extended desc must contain h1 prefix)
+    desc_has_kw = bool(yoast_kw) and yoast_kw in final_desc.lower()
+    checks.append(ValidationCheck(
+        name="yoast_keyword_in_description",
+        passed=desc_has_kw or not yoast_kw,
+        detail=f"первые слова h1 '{yoast_kw}' должны быть в meta_description",
+        actual="present" if desc_has_kw else "missing",
+        expected="present",
     ))
 
     # Humanizer pass — em-dash density + AI vocab — used for score, not retry on its own
