@@ -41,7 +41,7 @@ from integrations.yandex_webmaster import (
 from services.ai.designservice import DesignserviceArticleService
 from services.announce.designservice_tg import announce_published_article
 from services.designservice_images import generate_and_publish_cover
-from services.seo import humanize_html, render_article
+from services.seo import humanize_html, inject_yoast_keyword, render_article
 
 log = structlog.get_logger()
 
