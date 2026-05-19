@@ -185,17 +185,40 @@ def _reading_minutes(body_html: str) -> int:
 
 
 def _ensure_description_length(desc: str, h1: str, kw_primary: str = "") -> str:
-    """Ensure meta description is 100-180 characters (Yoast SEO recommendation).
+    """Ensure meta description is 100-180 chars AND contains Yoast focus keyword
+    (first 2-3 content words of h1).
 
     Strategy:
-      - If already 100-180 → return unchanged
-      - If < 100 → append context tail ('Опыт студии Дизайн-Сервис в Крыму с 1997 года.')
-      - If > 180 → truncate at sentence boundary, then at word
+      1. If empty → seed from h1 + studio info
+      2. If yoast_kw NOT in desc → prepend 'h1_prefix — ' or append
+      3. If < 100 → append context tail
+      4. If 100-180 and yoast_kw present → return unchanged
+      5. If > 180 → truncate at sentence boundary
     """
+    # Compute Yoast focus keyword: first 2-3 content words of h1 (>=3 chars)
+    h1_content_words = [w for w in (h1 or "").split() if len(w) >= 3]
+    yoast_kw = " ".join(h1_content_words[:2]) if len(h1_content_words) >= 2 else ""
+
     if not desc:
-        # Fallback: build from h1 + studio info
         desc = f"{h1}. Опыт студии Дизайн-Сервис в Крыму с 1997 года, 320+ проектов."
     desc = desc.strip()
+
+    # PR 33: GUARANTEE yoast_kw is in description — prepend if missing
+    if yoast_kw and yoast_kw.lower() not in desc.lower():
+        prefix = f"{yoast_kw}: "
+        # If desc already long, replace start with prefix + sentence reset
+        if len(desc) >= 100:
+            # Truncate desc to keep room for prefix, ensure 100-180 final
+            max_orig = 180 - len(prefix)
+            desc = desc[:max_orig].rstrip()
+            # Try to end at sentence boundary
+            for sep in (". ", "? ", "! "):
+                idx = desc.rfind(sep)
+                if idx > 60:
+                    desc = desc[:idx + 1]
+                    break
+        desc = prefix + desc
+
     if 100 <= len(desc) <= 180:
         return desc
     if len(desc) < 100:
