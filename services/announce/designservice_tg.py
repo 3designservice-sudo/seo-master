@@ -20,6 +20,18 @@ from aiogram.types import BufferedInputFile
 log = structlog.get_logger()
 
 
+def _format_progress(published_count: int, planned_count: int, pace_per_day: int = 5) -> str:
+    """Build progress line: 📊 X/Y, осталось N дней at K/day pace."""
+    total = published_count + planned_count
+    if planned_count <= 0:
+        return f"📊 Прогресс: {published_count}/{total} (проект завершён 🎉)"
+    days_left = max(1, (planned_count + pace_per_day - 1) // pace_per_day)
+    return (
+        f"📊 Прогресс: {published_count}/{total} опубликовано · "
+        f"осталось {planned_count} статей ≈ {days_left} дней при {pace_per_day}/день"
+    )
+
+
 def _escape_html(text: str) -> str:
     """Minimal HTML escape for Telegram parse_mode='HTML'."""
     return (
@@ -37,6 +49,7 @@ def _build_caption(
     score: int = 0,
     word_count: int = 0,
     humanizer_score: float = 0.0,
+    progress_line: str = "",
 ) -> str:
     """Compose HTML caption — <= 1024 chars (Telegram caption limit)."""
     lines = [
@@ -50,6 +63,8 @@ def _build_caption(
         lines.append(_escape_html(excerpt))
         lines.append("")
     lines.append(f"📊 Качество: {score}%   ✍ Слов: {word_count}   🤖 Humanizer: {humanizer_score:.2f}")
+    if progress_line:
+        lines.append(progress_line)
     lines.append("")
     lines.append(f'<a href="{_escape_html(url)}">Читать на designservice.group →</a>')
     return "\n".join(lines)
@@ -67,6 +82,9 @@ async def announce_published_article(
     word_count: int = 0,
     humanizer_score: float = 0.0,
     http_client: Any = None,
+    published_count: int = 0,
+    planned_count: int = 0,
+    pace_per_day: int = 5,
 ) -> bool:
     """Send TG notification about published article. Never raises.
 
@@ -105,6 +123,7 @@ async def announce_published_article(
     else:
         bot_to_use = main_bot
 
+    progress_line = _format_progress(published_count, planned_count, pace_per_day) if (published_count or planned_count) else ""
     caption = _build_caption(
         title=title,
         url=url,
@@ -112,6 +131,7 @@ async def announce_published_article(
         score=score,
         word_count=word_count,
         humanizer_score=humanizer_score,
+        progress_line=progress_line,
     )
 
     try:
@@ -165,6 +185,9 @@ async def announce_blocked_article(
     failed_checks: list[str] | None = None,
     humanizer_score: float = 0.0,
     attempts: int = 3,
+    published_count: int = 0,
+    planned_count: int = 0,
+    pace_per_day: int = 5,
 ) -> bool:
     """Notify GRAD that pipeline blocked an article after retry exhaustion.
 
@@ -197,12 +220,14 @@ async def announce_blocked_article(
             return False
 
     failed_str = ", ".join(failed_checks or []) or "—"
+    progress_line = _format_progress(published_count, planned_count, pace_per_day) if (published_count or planned_count) else ""
     text = (
         f"⚠ <b>Статья не опубликована</b>\n"
         f"id={article_id}: {_escape_html(title)}\n\n"
         f"📊 Score: {score}%   🤖 Humanizer: {humanizer_score:.2f}   ↻ Попыток: {attempts}\n"
-        f"❌ Не прошли проверки: {_escape_html(failed_str)}\n\n"
-        f"Статья помечена <code>blocked</code> в roadmap. "
+        f"❌ Не прошли проверки: {_escape_html(failed_str)}\n"
+        + (progress_line + "\n" if progress_line else "")
+        + f"\nСтатья помечена <code>blocked</code> в roadmap. "
         f"При следующем запуске pipeline возьмёт другую статью на сегодня."
     )
 
