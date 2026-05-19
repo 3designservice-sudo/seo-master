@@ -416,9 +416,11 @@ ym(48007919,"init",{{clickmap:true,trackLinks:true,accurateTrackBounce:true,webv
 
     # Strip any backticks from article_html — they would break JS template literal.
     article_html_js_safe = article_html.replace("\\", "\\\\").replace("`", "\\`").replace("${{", "\\${{")
-    # HYBRID SSR: contents live inside <div id="root"> so server-side parsers
-    # (Yandex bot, page_stats_widget, etc.) see the full article body without
-    # executing JavaScript. React mount reads innerHTML and re-wraps in PageShell.
+    # HYBRID SSR + sample-matching mount pattern:
+    # - SSR content lives in <div id=root>...</div> for server-side parsers
+    # - React mount reads innerHTML, builds Page() function returning
+    #   PageShell wrapping <main class="main-content"> (matches existing
+    #   site's blog template so footer/sidebar render correctly)
     body = f"""<body class="art-page">
 <div id="root">{article_html}</div>
 <script>
@@ -427,16 +429,24 @@ var e=React.createElement;
 var root=document.getElementById('root');
 function mount(){{
   if (typeof window.PageShell !== 'function') {{
-    // SSR content already in root — leave it
-    return;
+    return;  // SSR content already visible
   }}
-  var html=root.innerHTML;
-  root.innerHTML='';
-  ReactDOM.createRoot(root).render(
-    e(window.PageShell, {{ activePage: '/blog.html' }},
-      e('div', {{ dangerouslySetInnerHTML: {{ __html: html }} }})
-    )
-  );
+  var ARTICLE_HTML = root.innerHTML;
+  root.innerHTML = '';
+  function Page(){{
+    return e(window.PageShell, {{ activePage: '/blog.html' }},
+      e('main', {{ className: 'main-content', dangerouslySetInnerHTML: {{ __html: ARTICLE_HTML }} }})
+    );
+  }}
+  ReactDOM.createRoot(root).render(e(Page));
+  // Article progress bar
+  window.addEventListener('scroll', function(){{
+    var bar = document.querySelector('.art-progress-fill');
+    if (!bar) return;
+    var s = window.scrollY;
+    var H = document.documentElement.scrollHeight - window.innerHeight;
+    bar.style.width = Math.min(100, (s / Math.max(1, H)) * 100) + '%';
+  }}, {{ passive: true }});
 }}
 if (document.readyState === 'loading') {{
   document.addEventListener('DOMContentLoaded', mount);
