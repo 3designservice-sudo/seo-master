@@ -91,13 +91,40 @@ system: |
      самой статьи (canonical). Якорный текст в ссылке должен быть осмысленным —
      не «здесь», не «подробнее», а полное название услуги.
 
-  6. ВНЕШНЯЯ ССЫЛКА — обязательно ОДНА ссылка из этих:
-     • <a href="https://ru.wikipedia.org/wiki/Ремонт_квартир" rel="noopener" target="_blank">…</a>
-     • <a href="https://ru.wikipedia.org/wiki/Дизайн_интерьера" rel="noopener" target="_blank">…</a>
-     • <a href="https://ru.wikipedia.org/wiki/Архитектурное_проектирование" rel="noopener" target="_blank">…</a>
-     • Любая другая статья на ru.wikipedia.org, релевантная теме.
-     • Допустимо: ГОСТ/СНиП через docs.cntd.ru, consultant.ru.
-     rel="noopener" target="_blank" обязательно.
+  6. ВНЕШНЯЯ ССЫЛКА — рекомендуется поставить минимум одну ссылку на ru.wikipedia.org
+     по конкретному термину из текста (стиль / материал / технология / норматив):
+
+     Стили дизайна:
+     • https://ru.wikipedia.org/wiki/Классицизм
+     • https://ru.wikipedia.org/wiki/Минимализм
+     • https://ru.wikipedia.org/wiki/Скандинавский_стиль
+     • https://ru.wikipedia.org/wiki/Барокко
+     • https://ru.wikipedia.org/wiki/Лофт_(стиль)
+     • https://ru.wikipedia.org/wiki/Хай-тек_(дизайн)
+
+     Материалы:
+     • https://ru.wikipedia.org/wiki/Венецианская_штукатурка
+     • https://ru.wikipedia.org/wiki/Керамогранит
+     • https://ru.wikipedia.org/wiki/Терракот
+     • https://ru.wikipedia.org/wiki/Гипсокартон
+     • https://ru.wikipedia.org/wiki/Натяжной_потолок
+     • https://ru.wikipedia.org/wiki/Паркет
+
+     Услуги и процессы:
+     • https://ru.wikipedia.org/wiki/Ремонт_квартир
+     • https://ru.wikipedia.org/wiki/Дизайн_интерьера
+     • https://ru.wikipedia.org/wiki/Архитектурное_проектирование
+     • https://ru.wikipedia.org/wiki/Ландшафтная_архитектура
+
+     Нормативы и стандарты:
+     • https://ru.wikipedia.org/wiki/СНиП
+     • https://docs.cntd.ru/ — официальные ГОСТы / СП
+     • https://consultant.ru/ — правовые акты
+
+     Поставь ссылку на термин который реально упоминается в твоей статье. Не нужно
+     ссылаться на «Дизайн интерьера» вообще, если статья про ремонт ванной —
+     лучше сослаться на «Керамогранит» или «Гидроизоляция». rel="noopener"
+     target="_blank" обязательно для внешних ссылок.
 
   7. ЦИТАТА ЭКСПЕРТА (одна на статью):
      В одном из последних разделов — короткая прямая речь Александра Шульмана
