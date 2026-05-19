@@ -184,6 +184,47 @@ def _reading_minutes(body_html: str) -> int:
     return minutes
 
 
+def _ensure_description_length(desc: str, h1: str, kw_primary: str = "") -> str:
+    """Ensure meta description is 100-180 characters (Yoast SEO recommendation).
+
+    Strategy:
+      - If already 100-180 → return unchanged
+      - If < 100 → append context tail ('Опыт студии Дизайн-Сервис в Крыму с 1997 года.')
+      - If > 180 → truncate at sentence boundary, then at word
+    """
+    if not desc:
+        # Fallback: build from h1 + studio info
+        desc = f"{h1}. Опыт студии Дизайн-Сервис в Крыму с 1997 года, 320+ проектов."
+    desc = desc.strip()
+    if 100 <= len(desc) <= 180:
+        return desc
+    if len(desc) < 100:
+        # Try adding kw_primary mention + studio tail
+        tail_options = [
+            f" Опыт студии Дизайн-Сервис в Крыму с 1997 года.",
+            f" Подробный гид от студии Дизайн-Сервис.",
+            f" Студия Дизайн-Сервис — 27 лет в Крыму, 320+ проектов.",
+        ]
+        for tail in tail_options:
+            extended = desc + tail
+            if 100 <= len(extended) <= 180:
+                return extended
+        # Fallback: take longest combination that fits
+        for tail in tail_options:
+            extended = desc + tail
+            if len(extended) <= 180:
+                return extended if len(extended) >= 100 else extended + " Крым."
+        return desc
+    # > 180 — truncate at sentence
+    for sep in (". ", "! ", "? "):
+        idx = desc.rfind(sep, 0, 178)
+        if idx > 100:
+            return desc[:idx + 1].rstrip()
+    # Fallback: hard truncate at word
+    truncated = desc[:177].rsplit(" ", 1)[0] + "..."
+    return truncated
+
+
 def _author_block_html() -> str:
     return f"""<section class="art-author-block" style="margin-top:48px;padding:32px;background:var(--bg2,#eae6df);border-radius:16px">
 <h2 style="margin-top:0">Об авторе</h2>
@@ -269,6 +310,11 @@ def render_article(
         date_part = article.published_date or article.planned_date or "2026-05-19"
         date_iso = f"{date_part}T10:00:00+03:00"
 
+    # Ensure description meets Yoast 100-180 chars requirement
+    meta_description = _ensure_description_length(
+        article.meta_description, article.h1, article.kw_primary or ""
+    )
+
     # ld+json blocks
     ld_scripts = [
         _json_ld_script(_build_blogposting_ld(article, url, cover, date_iso)),
@@ -301,11 +347,11 @@ body{{background:var(--bg);color:var(--text)}}
 <!-- /COFAB_NO_FOUC_v1 -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_escape(article.title_seo or article.h1)}</title>
-<meta name="description" content="{_escape(article.meta_description)}">
+<meta name="description" content="{_escape(meta_description)}">
 <link rel="canonical" href="{url}">
 <meta property="og:type" content="article">
 <meta property="og:title" content="{_escape(article.title_seo or article.h1)}">
-<meta property="og:description" content="{_escape(article.meta_description)}">
+<meta property="og:description" content="{_escape(meta_description)}">
 <meta property="og:image" content="{cover}">
 <meta property="og:url" content="{url}">
 <meta property="og:site_name" content="Дизайн-Сервис">
@@ -314,7 +360,7 @@ body{{background:var(--bg);color:var(--text)}}
 <meta property="article:author" content="{_DEFAULT_AUTHOR['name']}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{_escape(article.title_seo or article.h1)}">
-<meta name="twitter:description" content="{_escape(article.meta_description)}">
+<meta name="twitter:description" content="{_escape(meta_description)}">
 <meta name="twitter:image" content="{cover}">
 <link rel="icon" type="image/png" href="/img/Favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -347,28 +393,32 @@ ym(48007919,"init",{{clickmap:true,trackLinks:true,accurateTrackBounce:true,webv
 
     # Article HTML as JS template literal — wrapped by React PageShell at runtime.
     # Mirror pattern used by existing /blog/*/index.html.
-    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(article.meta_description)}</p><div class="art-meta"><span class="art-author"><span class="art-author-initials">{_DEFAULT_AUTHOR['initials']}</span><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_read_more_html(recent_articles)}{_cross_links_html(exclude_url=article.service_url)}</div>"""
+    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(meta_description)}</p><div class="art-meta"><span class="art-author"><span class="art-author-initials">{_DEFAULT_AUTHOR['initials']}</span><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_read_more_html(recent_articles)}{_cross_links_html(exclude_url=article.service_url)}</div>"""
 
     # Strip any backticks from article_html — they would break JS template literal.
     article_html_js_safe = article_html.replace("\\", "\\\\").replace("`", "\\`").replace("${{", "\\${{")
     # Page title for tab + PageShell prop
     page_title_js = json.dumps(article.h1, ensure_ascii=False)
 
+    # HYBRID SSR: contents live inside <div id="root"> so server-side parsers
+    # (Yandex bot, page_stats_widget, etc.) see the full article body without
+    # executing JavaScript. React mount reads innerHTML and re-wraps in PageShell.
     body = f"""<body class="art-page">
-<div id="root"></div>
+<div id="root">{article_html}</div>
 <script>
 (function(){{
 var e=React.createElement;
-var ARTICLE_HTML=`{article_html_js_safe}`;
+var root=document.getElementById('root');
 function mount(){{
   if (typeof window.PageShell !== 'function') {{
-    // Fallback: inject SSR content directly if PageShell missing
-    document.getElementById('root').innerHTML = ARTICLE_HTML;
+    // SSR content already in root — leave it
     return;
   }}
-  ReactDOM.createRoot(document.getElementById('root')).render(
+  var html=root.innerHTML;
+  root.innerHTML='';
+  ReactDOM.createRoot(root).render(
     e(window.PageShell, {{ pageTitle: {page_title_js}, kind: 'article' }},
-      e('div', {{ dangerouslySetInnerHTML: {{ __html: ARTICLE_HTML }} }})
+      e('div', {{ dangerouslySetInnerHTML: {{ __html: html }} }})
     )
   );
 }}
