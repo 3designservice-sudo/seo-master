@@ -168,9 +168,11 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
     word_count = _count_words(plain)
     checks: list[ValidationCheck] = []
 
-    # 1. Word count within ±15% of target (relaxed in PR 8 — Sonnet tends to overshoot)
+    # 1. Word count: asymmetric tolerance (PR 20)
+    # Sonnet 4.5 reliably overshoots target — writes 1700-1800 even when target=1400.
+    # Allow -15% on lower side (close to target), +30% on upper (Sonnet's comfort zone).
     target = int(article.target_words or 1500)
-    lo, hi = int(target * 0.85), int(target * 1.15)
+    lo, hi = int(target * 0.85), int(target * 1.30)
     checks.append(ValidationCheck(
         name="word_count",
         passed=lo <= word_count <= hi,
