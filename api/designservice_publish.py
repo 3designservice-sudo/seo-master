@@ -138,6 +138,13 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
             if main_bot is not None:
                 try:
                     from services.announce.designservice_tg import announce_blocked_article
+                    # Fetch progress for blocked notification
+                    try:
+                        _stats = await ds_client.stats()
+                        _pub = _stats.by_status.get("published", 0)
+                        _plan = _stats.by_status.get("planned", 0)
+                    except Exception:
+                        _pub, _plan = 0, 0
                     await announce_blocked_article(
                         main_bot=main_bot,
                         settings=settings,
@@ -147,6 +154,9 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                         failed_checks=failed_names,
                         humanizer_score=result.humanizer_score,
                         attempts=draft.attempts,
+                        published_count=_pub,
+                        planned_count=_plan,
+                        pace_per_day=5,
                     )
                 except Exception as exc:
                     log.warning("designservice.publish.announce_blocked_failed", err=str(exc))
