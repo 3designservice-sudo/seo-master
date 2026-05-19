@@ -462,6 +462,10 @@ def create_app() -> web.Application:
     from api.bamboodom_digest import bamboodom_digest_handler
     app.router.add_post("/api/bamboodom/digest", bamboodom_digest_handler)
 
+    # Designservice.group: QStash auto-publish (3x daily — see scripts/setup_designservice_schedule.py).
+    from api.designservice_publish import designservice_publish_handler
+    app.router.add_post("/api/designservice/publish", designservice_publish_handler)
+
     # Google OAuth (4G) — GSC authorization flow
     from api.google_oauth import (
         google_callback_handler,
