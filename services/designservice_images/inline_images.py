@@ -219,22 +219,14 @@ def _split_into_sections(body_html: str) -> list[dict]:
     return sections
 
 
-def _build_inline_prompt(article: Any, section: dict, style_hint: str) -> str:
-    """Compose photo prompt for one section, mixing article topic + section context."""
-    section_topic = section["h2_title"][:120]
-    article_topic = article.h1[:120]
-    geo_hint = "Crimea, modern Russian context"
-    prompt = (
-        f"Professional editorial photograph for blog article body. "
-        f"Article topic: {article_topic}. "
-        f"This section: {section_topic}. "
-        f"Scene description: {style_hint}. Context: {geo_hint}. "
-        f"Aspect ratio 16:9, 1024x576. "
-        f"Photography style: realistic, magazine quality, sharp focus, "
-        f"soft natural light. No text overlays, no logos, no watermarks, "
-        f"no people in foreground."
-    )
-    return prompt
+def _build_inline_prompt(article: Any, section: dict, style_hint: str, idx: int = 1) -> str:
+    """Compose photo prompt for one section using PR 36 combinatorial palette.
+
+    Deterministic per (article.id, idx) so retries reuse cached images via
+    HEAD-check in PR 31.
+    """
+    from services.designservice_images.prompt_palette import build_random_prompt
+    return build_random_prompt(article, seed_index=idx, section_context=section.get("h2_title", ""))
 
 
 async def enrich_with_inline_images(
@@ -311,7 +303,7 @@ async def enrich_with_inline_images(
     # Generate all images in parallel (Semaphore 3) — skip cached
     semaphore = asyncio.Semaphore(3)
     prompts = [
-        _build_inline_prompt(article, sec, style_pool[i % len(style_pool)])
+        _build_inline_prompt(article, sec, style_pool[i % len(style_pool)] if style_pool else "", idx=i + 1)
         for i, sec in enumerate(candidates)
     ]
     log.info(

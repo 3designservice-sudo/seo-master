@@ -25,41 +25,12 @@ log = structlog.get_logger()
 
 
 def _build_cover_prompt(article: Any) -> str:
-    """Compose Gemini-image prompt from article metadata.
+    """Compose Gemini-image prompt — uses PR 36 combinatorial palette.
 
-    For interior design / renovation topics we want photo-realistic interior
-    scenes shot from professional angle, soft natural light, modern Crimean
-    apartment context. Avoid logos, text overlays, watermarks (Gemini occasionally
-    adds these — explicitly negative prompt them).
+    Cover uses seed_index=0 (deterministic per article).
     """
-    service = (article.service or "").lower()
-    geo_hint = "Crimea, modern Russian apartment" if "крым" in (article.geo or "").lower() else "modern apartment"
-
-    style_map = {
-        "design": "elegant living room with sunlight, contemporary minimal style, neutral palette",
-        "renovation": "freshly renovated apartment, clean white walls, hardwood floor, professional photography",
-        "architecture": "modern residential building exterior, golden hour, architectural photography",
-        "construction": "construction site of modern home with cranes, daytime, wide shot",
-        "landscape": "designed garden in Crimea with stone path, Mediterranean plants, warm afternoon light",
-        "furniture": "stylish living room with custom furniture, soft natural light, neutral tones",
-        "european-furniture": "luxury Italian-style living room with European furniture, evening light, warm atmosphere",
-        "curtains": "tall windows with flowing linen curtains, soft daylight, modern interior",
-        "supervision": "professional interior designer reviewing blueprints in modern apartment",
-        "completion": "fully furnished apartment ready for move-in, warm cozy atmosphere",
-        "plaster": "wall with decorative Venetian plaster texture, warm directional light",
-        "panels": "wall with WPC wood panels, modern accent, contemporary lighting",
-        "flexstone": "exterior facade with flexible stone tiles, dramatic afternoon light",
-    }
-    base_style = style_map.get(service, "modern interior design, professional photography")
-
-    prompt = (
-        f"Professional editorial photograph for blog cover. Topic: {article.h1}. "
-        f"Scene: {base_style}. Context: {geo_hint}. Aspect ratio 16:9, 1024x576. "
-        f"Photography style: realistic, magazine quality, sharp focus, soft natural light, "
-        f"shallow depth of field. No text overlays, no logos, no watermarks, no people in foreground."
-    )
-    return prompt
-
+    from services.designservice_images.prompt_palette import build_random_prompt
+    return build_random_prompt(article, seed_index=0, section_context=article.h1[:120])
 
 async def _fetch_image_bytes(
     result: Any,
