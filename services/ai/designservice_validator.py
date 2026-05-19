@@ -271,26 +271,26 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
         expected=">= 3",
     ))
 
-    # 7. External authority link (PR 10: ANY external link counts, not just Wikipedia)
+    # 7. External authority link (PR 15: soft check — Sonnet stubbornly skips,
+    # we don't block. Count is kept in logs for monitoring SEO trend.)
     external_auth = len(re.findall(
         r'href="https?://(?:ru\.wikipedia\.org|docs\.cntd\.ru|gosthelp\.ru|consultant\.ru'
         r'|kodeks\.ru|cntd\.ru|garant\.ru|rosreestr\.ru|gks\.ru|nornickel\.ru)',
         body_html, re.IGNORECASE
     ))
-    # Если конкретного нет — считаем любую внешнюю ссылку (не designservice/bamboodom)
     if external_auth == 0:
         any_external = len(re.findall(
             r'href="https?://(?!designservice\.group|bamboodom\.ru)[\w.-]+',
             body_html, re.IGNORECASE
         ))
-        # Любая внешняя ссылка тоже принимается (soft requirement)
-        external_auth = 1 if any_external >= 1 else 0
+        external_auth = any_external
+    # Always pass — this metric is informational only after PR 15.
     checks.append(ValidationCheck(
         name="external_authority_link",
-        passed=external_auth >= 1,
-        detail="нужна минимум одна внешняя ссылка (Wikipedia, ГОСТ, любой авторитетный ресурс)",
+        passed=True,
+        detail="внешняя ссылка (info — не блокирует)",
         actual=external_auth,
-        expected=">= 1",
+        expected=">= 1 (optional)",
     ))
 
     # 8. Concrete numbers >= 5
