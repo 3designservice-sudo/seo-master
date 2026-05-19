@@ -288,7 +288,27 @@ async def enrich_with_inline_images(
         log.warning("designservice.inline_images.no_slug")
         return body_html
 
-    # Generate all images in parallel (Semaphore 3)
+    # PR 31: cache-check — collect which image-N.webp already exist on server.
+    # Saves Gemini API calls on retry / blocked articles.
+    existing_names: set[str] = set()
+    for i in range(1, len(candidates) + 1):
+        name = f"image-{i}.webp"
+        url = f"{base_url.rstrip('/')}/blog/{slug}/{name}"
+        try:
+            r = await http_client.head(url, timeout=10.0)
+            if r.status_code == 200:
+                existing_names.add(name)
+        except Exception:
+            pass
+    if existing_names:
+        log.info(
+            "designservice.inline_images.cache_hits",
+            slug=slug,
+            cached=len(existing_names),
+            total=len(candidates),
+        )
+
+    # Generate all images in parallel (Semaphore 3) — skip cached
     semaphore = asyncio.Semaphore(3)
     prompts = [
         _build_inline_prompt(article, sec, style_pool[i % len(style_pool)])
@@ -299,18 +319,30 @@ async def enrich_with_inline_images(
         article_id=getattr(article, "id", "?"),
         count=len(prompts),
     )
+    async def _maybe_generate(idx, prompt):
+        name = f"image-{idx + 1}.webp"
+        if name in existing_names:
+            return b"CACHED"  # sentinel — skip upload, just inject existing URL
+        return await _gen_one_image(openrouter_image_client, http_client, prompt, semaphore)
+
     image_bytes_list = await asyncio.gather(
-        *[_gen_one_image(openrouter_image_client, http_client, p, semaphore) for p in prompts],
+        *[_maybe_generate(i, p) for i, p in enumerate(prompts)],
         return_exceptions=False,
     )
 
-    # Upload each + collect URLs
-    img_urls: list[tuple[int, str, str]] = []  # (section_idx, url, alt)
+    # Upload each (skip CACHED sentinel — already on server) + collect URLs
     upload_tasks = []
+    cached_results = []
     for i, (sec, raw) in enumerate(zip(candidates, image_bytes_list)):
         if raw is None:
             continue
         name = f"image-{i + 1}.webp"
+        if raw == b"CACHED":
+            # Already on server — no upload, just collect URL
+            url = f"{base_url.rstrip('/')}/blog/{slug}/{name}"
+            alt = f"{article.h1}: {sec['h2_title']}"
+            cached_results.append((i, sec, url, alt))
+            continue
         upload_tasks.append((i, sec, name, raw))
 
     async def _upload(idx, sec, name, raw):
@@ -322,10 +354,11 @@ async def enrich_with_inline_images(
             log.warning("designservice.inline_images.upload_failed", name=name, err=str(exc))
             return None
 
-    upload_results = await asyncio.gather(
+    fresh_results = await asyncio.gather(
         *[_upload(idx, sec, name, raw) for idx, sec, name, raw in upload_tasks],
         return_exceptions=False,
     )
+    upload_results = cached_results + list(fresh_results)
 
     # Inject <img> tags into body_html
     # We must process from highest insert_at down so positions stay valid
