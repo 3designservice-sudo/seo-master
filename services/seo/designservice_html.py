@@ -199,9 +199,12 @@ def _ensure_description_length(desc: str, h1: str, kw_primary: str = "") -> str:
     if 100 <= len(desc) <= 180:
         return desc
     if len(desc) < 100:
-        # Try adding kw_primary mention + studio tail
+        # Include first 2-3 words of h1 in description for Yoast focus-keyword match
+        h1_words = [w for w in (h1 or "").split() if w]
+        h1_prefix = " ".join(h1_words[:3]) if len(h1_words) >= 2 else ""
         tail_options = [
-            f" Опыт студии Дизайн-Сервис в Крыму с 1997 года.",
+            f" {h1_prefix} — гид от студии Дизайн-Сервис в Крыму с 1997 года." if h1_prefix else " Опыт студии Дизайн-Сервис в Крыму с 1997 года.",
+            f" Опыт студии Дизайн-Сервис в Крыму с 1997 года, 320+ проектов.",
             f" Подробный гид от студии Дизайн-Сервис.",
             f" Студия Дизайн-Сервис — 27 лет в Крыму, 320+ проектов.",
         ]
