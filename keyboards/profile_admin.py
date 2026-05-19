@@ -551,6 +551,8 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
     ]
     if get_settings().bamboodom_enabled:
         rows.append([InlineKeyboardButton(text="Bamboodom.ru", callback_data="bamboodom:entry")])
+    if get_settings().designservice_enabled:
+        rows.append([InlineKeyboardButton(text="Designservice.group", callback_data="designservice:entry")])
     rows.append([InlineKeyboardButton(text="Главное меню", callback_data="nav:dashboard")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
