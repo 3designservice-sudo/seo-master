@@ -191,6 +191,38 @@ def _author_block_html() -> str:
 </section>"""
 
 
+def _read_more_html(items: list[dict] | None) -> str:
+    """Build «Читать дальше» block with up to 3 article preview cards.
+
+    Args:
+        items: list of {h1, published_url, cover_url, published_date}
+
+    Returns empty string if no items.
+    """
+    if not items:
+        return ""
+    cards = []
+    for item in items[:3]:
+        h1 = _escape(item.get("h1", ""))[:120]
+        url = item.get("published_url", "")
+        cover = item.get("cover_url") or "/Logo_DS.png"
+        date_ru = _format_date_ru(item.get("published_date", ""))
+        cards.append(f"""
+<a class="art-readmore-card" href="{url}">
+  <img class="art-readmore-cover" src="{cover}" alt="{h1}" loading="lazy" width="320" height="180">
+  <div class="art-readmore-body">
+    <h3 class="art-readmore-title">{h1}</h3>
+    <p class="art-readmore-date">{date_ru}</p>
+  </div>
+</a>""")
+    return f"""<section class="art-read-more" style="margin-top:48px">
+<h2 class="art-readmore-heading">Читать дальше</h2>
+<div class="art-readmore-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:24px">
+{"".join(cards)}
+</div>
+</section>"""
+
+
 def _cross_links_html(exclude_url: str = "") -> str:
     items = []
     for url, label in _CROSS_LINKS:
@@ -212,6 +244,7 @@ def render_article(
     cover_url: str | None = None,
     date_iso: str = "",
     base_url: str = "https://designservice.group",
+    recent_articles: list[dict] | None = None,
 ) -> str:
     """Render full HTML document for blog article.
 
@@ -314,7 +347,7 @@ ym(48007919,"init",{{clickmap:true,trackLinks:true,accurateTrackBounce:true,webv
 
     # Article HTML as JS template literal — wrapped by React PageShell at runtime.
     # Mirror pattern used by existing /blog/*/index.html.
-    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(article.meta_description)}</p><div class="art-meta"><span class="art-author"><span class="art-author-initials">{_DEFAULT_AUTHOR['initials']}</span><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_cross_links_html(exclude_url=article.service_url)}</div>"""
+    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(article.meta_description)}</p><div class="art-meta"><span class="art-author"><span class="art-author-initials">{_DEFAULT_AUTHOR['initials']}</span><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_read_more_html(recent_articles)}{_cross_links_html(exclude_url=article.service_url)}</div>"""
 
     # Strip any backticks from article_html — they would break JS template literal.
     article_html_js_safe = article_html.replace("\\", "\\\\").replace("`", "\\`").replace("${{", "\\${{")

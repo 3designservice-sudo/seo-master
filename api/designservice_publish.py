@@ -197,7 +197,40 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
             except Exception as exc:
                 log.warning("designservice.publish.inline_images_failed", err=str(exc))
 
-        # 6b. Humanizer pass + render
+        # 6b. Fetch 3 most recent published articles for «Читать дальше» block
+        recent_articles: list[dict] = []
+        try:
+            # Fetch all to find published; bot_api has no dedicated 'list published'
+            # endpoint, so we use stats + iterating get_article on published candidates.
+            # In practice we use a small probe — newest article IDs near current.
+            stats_resp = await ds_client.stats()
+            # The roadmap doesn't return list of published from stats —
+            # fallback: scan IDs from current-10 to current+30 looking for published
+            current_id = article.id
+            seen_pub: list[dict] = []
+            candidate_ids = list(range(max(1, current_id - 30), current_id + 30))
+            # Exclude current
+            candidate_ids = [i for i in candidate_ids if i != current_id]
+            for cid in candidate_ids:
+                if len(seen_pub) >= 3:
+                    break
+                try:
+                    a = await ds_client.get_article(cid)
+                    if a.status == "published" and a.published_url:
+                        cover = f"{settings.designservice_base_url.rstrip('/')}/blog/{a.target_url.strip('/').removeprefix('blog/').rstrip('/')}/cover.webp"
+                        seen_pub.append({
+                            "h1": a.h1,
+                            "published_url": a.published_url,
+                            "cover_url": cover,
+                            "published_date": a.published_date,
+                        })
+                except Exception:
+                    continue
+            recent_articles = seen_pub
+        except Exception as exc:
+            log.warning("designservice.publish.recent_fetch_failed", err=str(exc))
+
+        # 6c. Humanizer pass + render
         body_html, hum_stats = humanize_html(body_html_with_images, max_em_dash_per_1k=8)
         full_html = render_article(
             article,
@@ -205,6 +238,7 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
             cover_url=cover_url,
             date_iso=f"{today_iso}T10:00:00+03:00",
             base_url=settings.designservice_base_url,
+            recent_articles=recent_articles,
         )
 
         # 7. Publish HTML
