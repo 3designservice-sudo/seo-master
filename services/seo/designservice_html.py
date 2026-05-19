@@ -160,6 +160,30 @@ def _build_faq_ld(faq_items: list[tuple[str, str]]) -> dict:
     }
 
 
+def _format_date_ru(date_iso: str) -> str:
+    """Convert '2026-05-19' → '19 мая 2026 г.' for visible date in article meta."""
+    if not date_iso or len(date_iso) < 10:
+        return ""
+    try:
+        y, m, d = date_iso[:10].split("-")
+    except ValueError:
+        return date_iso
+    months = ["", "января", "февраля", "марта", "апреля", "мая", "июня",
+              "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+    try:
+        return f"{int(d)} {months[int(m)]} {y} г."
+    except (ValueError, IndexError):
+        return date_iso
+
+
+def _reading_minutes(body_html: str) -> int:
+    """Estimate reading time at ~180 words/minute (Russian average)."""
+    plain = re.sub(r"<[^>]+>", " ", body_html)
+    words = len(re.findall(r"[А-Яа-яA-Za-zЁё0-9]+", plain))
+    minutes = max(1, round(words / 180))
+    return minutes
+
+
 def _author_block_html() -> str:
     return f"""<section class="art-author-block" style="margin-top:48px;padding:32px;background:var(--bg2,#eae6df);border-radius:16px">
 <h2 style="margin-top:0">Об авторе</h2>
@@ -221,11 +245,27 @@ def render_article(
     if faq_items:
         ld_scripts.append(_json_ld_script(_build_faq_ld(faq_items)))
 
-    # Head section
+    # Head section — mirror existing /blog/*/index.html pattern (COFAB_NO_FOUC + shared.js)
     head = f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<!-- COFAB_NO_FOUC_v1 -->
+<script>
+(function(){{
+  try{{
+    var t = localStorage.getItem('ds_theme');
+    if(t === 'dark') document.documentElement.setAttribute('data-theme','dark');
+  }}catch(e){{}}
+}})();
+</script>
+<style id="ds-no-fouc">
+:root{{--bg:#f5f3ef;--bg2:#eae6df;--bg3:#fff;--text:#1a1a1a;--border:#ddd}}
+[data-theme="dark"]{{--bg:#0c0c0e;--bg2:#151518;--bg3:#1c1c21;--text:#e8e6e1;--border:#2a2a2e}}
+html{{background:var(--bg)}}
+body{{background:var(--bg);color:var(--text)}}
+</style>
+<!-- /COFAB_NO_FOUC_v1 -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_escape(article.title_seo or article.h1)}</title>
 <meta name="description" content="{_escape(article.meta_description)}">
@@ -244,8 +284,22 @@ def render_article(
 <meta name="twitter:description" content="{_escape(article.meta_description)}">
 <meta name="twitter:image" content="{cover}">
 <link rel="icon" type="image/png" href="/img/Favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="/css/article.css?v=12_s12v2">
 <link rel="stylesheet" href="/css/blog.css?v=12_s12v2">
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="/shared.js?v=12_phase14_202605120400"></script>
+<script src="/page_stats_widget.js?v=12_phase14_202605120400"></script>
+<script>
+(function(m,e,t,r,i,k,a){{m[i]=m[i]||function(){{(m[i].a=m[i].a||[]).push(arguments)}};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){{if(document.scripts[j].src===r){{return;}}}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)}})(window,document,"script","https://mc.yandex.ru/metrika/tag.js","ym");
+ym(48007919,"init",{{clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true}});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/48007919" style="position:absolute;left:-9999px" alt="Yandex Metrika"></div></noscript>
 {chr(10).join(ld_scripts)}
 </head>"""
 
@@ -258,33 +312,41 @@ def render_article(
     breadcrumbs_parts.append(f'<span>{_escape(article.h1)}</span>')
     breadcrumbs_html = '<span> / </span>'.join(breadcrumbs_parts)
 
-    body_inner = f"""<div class="art-wrap">
-<nav class="art-breadcrumbs">{breadcrumbs_html}</nav>
+    # Article HTML as JS template literal — wrapped by React PageShell at runtime.
+    # Mirror pattern used by existing /blog/*/index.html.
+    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(article.meta_description)}</p><div class="art-meta"><span class="art-author"><span class="art-author-initials">{_DEFAULT_AUTHOR['initials']}</span><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_cross_links_html(exclude_url=article.service_url)}</div>"""
 
-<header class="art-header">
-<h1 class="art-title">{_escape(article.h1)}</h1>
-<p class="art-excerpt">{_escape(article.meta_description)}</p>
-<div class="art-meta">
-<span class="art-author"><span class="art-author-initials">{_DEFAULT_AUTHOR['initials']}</span>
-<span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span>
-<span class="art-author-job">{_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span>
-<span class="art-meta-dot"></span>
-<span><time datetime="{date_iso}">{(article.planned_date or '').replace('-', '.')}</time></span>
-</div>
-</header>
+    # Strip any backticks from article_html — they would break JS template literal.
+    article_html_js_safe = article_html.replace("\\", "\\\\").replace("`", "\\`").replace("${{", "\\${{")
+    # Page title for tab + PageShell prop
+    page_title_js = json.dumps(article.h1, ensure_ascii=False)
 
-<img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high">
-
-<div class="art-body">
-{body_html}
-</div>
-
-{_author_block_html()}
-
-{_cross_links_html(exclude_url=article.service_url)}
-</div>"""
-
-    body = '<body class="art-page">\n' + body_inner + '\n</body>'
+    body = f"""<body class="art-page">
+<div id="root"></div>
+<script>
+(function(){{
+var e=React.createElement;
+var ARTICLE_HTML=`{article_html_js_safe}`;
+function mount(){{
+  if (typeof window.PageShell !== 'function') {{
+    // Fallback: inject SSR content directly if PageShell missing
+    document.getElementById('root').innerHTML = ARTICLE_HTML;
+    return;
+  }}
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    e(window.PageShell, {{ pageTitle: {page_title_js}, kind: 'article' }},
+      e('div', {{ dangerouslySetInnerHTML: {{ __html: ARTICLE_HTML }} }})
+    )
+  );
+}}
+if (document.readyState === 'loading') {{
+  document.addEventListener('DOMContentLoaded', mount);
+}} else {{
+  mount();
+}}
+}})();
+</script>
+</body>"""
     return head + "\n" + body + "\n</html>\n"
 
 
