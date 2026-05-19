@@ -346,8 +346,6 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                 db = request.app.get("db")
                 if db is not None:
                     log.info("designservice.publish.social_attempt", project_id=ann_pid)
-                else:
-                    log.warning("designservice.publish.social_no_db", note="app['db'] missing")
                     social_results = await announce_to_social(
                         db=db,
                         http_client=http_client,
@@ -362,6 +360,8 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                         source_tag="designservice_announce",
                     )
                     log.info("designservice.publish.social_results", results=social_results)
+                else:
+                    log.warning("designservice.publish.social_no_db", note="app['db'] missing")
         except Exception as exc:
             log.warning("designservice.publish.social_failed", err=str(exc))
 
