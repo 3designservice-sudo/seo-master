@@ -74,11 +74,30 @@ def _build_messages(
     article: Any,
     current_date_iso: str,
     retry_feedback: list[str] | None = None,
-) -> list[dict[str, str]]:
-    """Substitute placeholders + optionally append retry feedback to user."""
+) -> tuple[list[dict[str, str]], dict]:
+    """Substitute placeholders + optionally append retry feedback to user.
+
+    Returns (messages, meta_with_kind_adjustments).
+    Kind-aware: applies structure_hint, tone, quirks, temperature adjustment.
+    """
+    from services.ai.designservice_kind_styles import get_kind_instructions
+
     system = template["system"]
     user = template["user"]
-    meta = template.get("meta", {})
+    meta = dict(template.get("meta", {}))
+
+    # Get kind-specific instructions
+    kind_info = get_kind_instructions(article.kind or "info_basic")
+    kind_instructions_text = (
+        f"Тип статьи: {article.kind or 'info_basic'}\n\n"
+        f"СТРУКТУРА (специально для этого типа):\n{kind_info['structure_hint']}\n\n"
+        f"ТОН: {kind_info['tone']}\n"
+        f"ОСОБЕННОСТИ: {kind_info['quirks']}\n"
+    )
+
+    # Apply kind-specific temperature adjustment (±0.10 range)
+    base_temp = float(meta.get("temperature", 0.55))
+    meta["temperature"] = max(0.30, min(0.90, base_temp + float(kind_info.get("temperature_adj", 0.0))))
 
     # Build kw_secondary list bullets
     kw_secondary_list = (
@@ -91,6 +110,7 @@ def _build_messages(
     )
 
     replacements = {
+        "<<kind_instructions>>": kind_instructions_text,
         "<<h1>>": article.h1,
         "<<kw_primary>>": article.kw_primary or "",
         "<<kw_secondary_list>>": kw_secondary_list,
