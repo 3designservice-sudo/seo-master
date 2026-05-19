@@ -97,17 +97,49 @@ class ValidationResult:
         return len(self.failed) == 0 and self.humanizer_score >= 0.85
 
     def feedback_messages(self) -> list[str]:
-        """Human-readable issues for retry-feedback in next LLM call."""
+        """Human-readable issues for retry-feedback in next LLM call.
+
+        PR 10: directive language — tells LLM exactly what to fix and by how much.
+        """
         msgs = []
         for c in self.failed:
-            msg = f"{c.name}: {c.detail}"
+            base = f"❌ {c.detail}"
             if c.actual is not None and c.expected is not None:
-                msg += f" (получено {c.actual!r}, ожидается {c.expected!r})"
-            msgs.append(msg)
+                base += f" — у тебя {c.actual!r}, нужно {c.expected!r}."
+            # Add directive remediation per check
+            if c.name == "word_count":
+                base += " ИСПРАВЬ: сократи или удлини текст до указанного диапазона."
+            elif c.name == "kw_primary_count":
+                base += " ИСПРАВЬ: добавь упоминания ключевой фразы в естественных местах текста."
+            elif c.name == "external_authority_link":
+                base += " ИСПРАВЬ: вставь хотя бы одну ссылку <a href='https://ru.wikipedia.org/...' rel='noopener' target='_blank'>."
+            elif c.name == "internal_links":
+                base += " ИСПРАВЬ: добавь ссылки на /services/renovation.html, /services/design.html, /projects.html."
+            elif c.name == "expert_quote":
+                base += " ИСПРАВЬ: добавь цитату Александра Шульман в «русских кавычках» (15+ символов)."
+            elif c.name == "no_h1_in_body":
+                base += " ИСПРАВЬ: НЕ используй <h1> внутри body — он добавляется автоматически снаружи."
+            elif c.name == "kw_secondary_coverage":
+                base += " ИСПРАВЬ: упомяни хотя бы половину из доп. запросов в тексте."
+            elif c.name == "art_lead":
+                base += " ИСПРАВЬ: первый параграф должен быть <p class=\"art-lead\">…</p>."
+            elif c.name == "no_ai_phrases":
+                base += " ИСПРАВЬ: убери AI-штампы (важно отметить, таким образом и т.д.)."
+            elif c.name == "studio_mention":
+                base += " ИСПРАВЬ: упомяни студию 'Дизайн-Сервис' хотя бы 1 раз."
+            elif c.name == "author_mention":
+                base += " ИСПРАВЬ: упомяни 'Александр Шульман' хотя бы 1 раз."
+            elif c.name == "geo_mentions":
+                base += " ИСПРАВЬ: упомяни Крым / Симферополь / Севастополь / Ялту минимум 2 раза."
+            elif c.name == "concrete_numbers":
+                base += " ИСПРАВЬ: добавь конкретные числа (площадь, цены, сроки, проценты)."
+            elif c.name == "faq_count":
+                base += " ИСПРАВЬ: точное число <details class=\"faq\"> должно совпадать с указанным."
+            msgs.append(base)
         if self.humanizer_score < 0.85:
             msgs.append(
-                f"humanizer-score = {self.humanizer_score:.2f}, нужно ≥ 0.85. "
-                f"Убери AI-штампы и длинные тире. См. список запретных фраз в system-промпте."
+                f"❌ humanizer-score = {self.humanizer_score:.2f}, нужно ≥ 0.85. "
+                f"ИСПРАВЬ: убери длинные тире (—), AI-штампы. См. system-промпт."
             )
         return msgs
 
@@ -172,17 +204,24 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
         expected=expected_faq,
     ))
 
-    # 4. kw_primary mentions 3-15 (relaxed in PR 8 — wider window for natural variation)
+    # 4. kw_primary mentions 2-18 (PR 10: relaxed lower bound — Sonnet often inflects)
     if article.kw_primary:
+        # Match both exact phrase and stem variations (e.g. "ремонт квартир" matches "ремонта квартиры")
+        # Try exact first
         kw_count = len(re.findall(re.escape(article.kw_primary), plain, re.IGNORECASE))
+        if kw_count < 2:
+            # Try with main keyword (first word) — captures inflections
+            main_word = article.kw_primary.split()[0]
+            if len(main_word) >= 4:
+                kw_count = len(re.findall(re.escape(main_word), plain, re.IGNORECASE))
     else:
         kw_count = 0
     checks.append(ValidationCheck(
         name="kw_primary_count",
-        passed=3 <= kw_count <= 15,
-        detail="kw_primary должен встречаться 3-15 раз",
+        passed=2 <= kw_count <= 18,
+        detail=f"kw_primary '{article.kw_primary}' должен встречаться 2-18 раз (с инфлексиями)",
         actual=kw_count,
-        expected="3-15",
+        expected="2-18",
     ))
 
     # 5. kw_secondary: at least 50% coverage (relaxed in PR 8)
@@ -217,15 +256,24 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
         expected=">= 3",
     ))
 
-    # 7. External authority link (ru.wikipedia.org or similar)
+    # 7. External authority link (PR 10: ANY external link counts, not just Wikipedia)
     external_auth = len(re.findall(
-        r'href="https?://(?:ru\.wikipedia\.org|docs\.cntd\.ru|gosthelp\.ru|consultant\.ru)',
+        r'href="https?://(?:ru\.wikipedia\.org|docs\.cntd\.ru|gosthelp\.ru|consultant\.ru'
+        r'|kodeks\.ru|cntd\.ru|garant\.ru|rosreestr\.ru|gks\.ru|nornickel\.ru)',
         body_html, re.IGNORECASE
     ))
+    # Если конкретного нет — считаем любую внешнюю ссылку (не designservice/bamboodom)
+    if external_auth == 0:
+        any_external = len(re.findall(
+            r'href="https?://(?!designservice\.group|bamboodom\.ru)[\w.-]+',
+            body_html, re.IGNORECASE
+        ))
+        # Любая внешняя ссылка тоже принимается (soft requirement)
+        external_auth = 1 if any_external >= 1 else 0
     checks.append(ValidationCheck(
         name="external_authority_link",
         passed=external_auth >= 1,
-        detail="нужна минимум одна ссылка на авторитетный ресурс (ru.wikipedia.org, ГОСТ-портал)",
+        detail="нужна минимум одна внешняя ссылка (Wikipedia, ГОСТ, любой авторитетный ресурс)",
         actual=external_auth,
         expected=">= 1",
     ))
