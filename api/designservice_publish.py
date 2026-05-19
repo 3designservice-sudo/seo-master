@@ -218,11 +218,33 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                     a = await ds_client.get_article(cid)
                     if a.status == "published" and a.published_url:
                         cover = f"{settings.designservice_base_url.rstrip('/')}/blog/{a.target_url.strip('/').removeprefix('blog/').rstrip('/')}/cover.webp"
+                        # Reading time estimate (180 wpm)
+                        rt_mins = max(1, round((a.word_count or 1500) / 180))
+                        # Map service slug → site blog category (mirror PR 18)
+                        _SVC_CAT = {
+                            "renovation": "Ремонт квартир и домов",
+                            "design": "Дизайн интерьеров",
+                            "architecture": "Архитектурное проектирование",
+                            "construction": "Строительство домов",
+                            "landscape": "Ландшафтный дизайн",
+                            "supervision": "Авторский надзор",
+                            "completion": "Комплектация объекта",
+                            "furniture": "Мебель на заказ",
+                            "european-furniture": "Европейская мебель",
+                            "curtains": "Шторы и текстиль",
+                            "plaster": "Декоративная штукатурка",
+                            "panels": "Бамбуковые / SPC / WPC панели",
+                            "flexstone": "Гибкий камень / керамика",
+                        }
+                        category = _SVC_CAT.get((a.service or "").lower(), a.service_label or "Блог")
                         seen_pub.append({
                             "h1": a.h1,
                             "published_url": a.published_url,
                             "cover_url": cover,
                             "published_date": a.published_date,
+                            "excerpt": a.meta_description or "",
+                            "category": category,
+                            "reading_time": f"{rt_mins} мин",
                         })
                 except Exception:
                     continue

@@ -233,10 +233,17 @@ def _author_block_html() -> str:
 
 
 def _read_more_html(items: list[dict] | None) -> str:
-    """Build «Читать дальше» block with up to 3 article preview cards.
+    """Build «Читать дальше» block with up to 3 article-card previews.
+
+    Uses the SAME .article-card / .article-card-cover / .article-card-body /
+    .article-card-cat / .article-card-meta classes as /blog.html so styling
+    is identical (rounded, hover shadow, accent category, Playfair title).
 
     Args:
-        items: list of {h1, published_url, cover_url, published_date}
+        items: list of dicts with keys:
+            h1 (required), published_url, cover_url, published_date,
+            excerpt (meta_description, optional), category (optional),
+            reading_time (optional, e.g. "10 мин")
 
     Returns empty string if no items.
     """
@@ -248,20 +255,29 @@ def _read_more_html(items: list[dict] | None) -> str:
         url = item.get("published_url", "")
         cover = item.get("cover_url") or "/Logo_DS.png"
         date_ru = _format_date_ru(item.get("published_date", ""))
-        cards.append(f"""
-<a class="art-readmore-card" href="{url}">
-  <img class="art-readmore-cover" src="{cover}" alt="{h1}" loading="lazy" width="320" height="180">
-  <div class="art-readmore-body">
-    <h3 class="art-readmore-title">{h1}</h3>
-    <p class="art-readmore-date">{date_ru}</p>
-  </div>
-</a>""")
-    return f"""<section class="art-read-more" style="margin-top:48px">
-<h2 class="art-readmore-heading">Читать дальше</h2>
-<div class="art-readmore-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:24px">
-{"".join(cards)}
-</div>
-</section>"""
+        excerpt = _escape((item.get("excerpt") or "")[:200])
+        category = _escape(item.get("category") or "Блог")
+        reading_time = _escape(item.get("reading_time") or "")
+        meta_html = f'<span>{date_ru}</span><span class="dot">•</span><span>{reading_time}</span>' if reading_time else f'<span>{date_ru}</span>'
+        cards.append(
+            f'<a class="article-card" href="{url}">'
+            f'<div class="article-card-cover" style="background-image:url(\'' + cover + '\')"></div>'
+            f'<div class="article-card-body">'
+            f'<div class="article-card-cat">{category}</div>'
+            f'<h3>{h1}</h3>'
+            f'<p>{excerpt}</p>'
+            f'<div class="article-card-meta">{meta_html}</div>'
+            f'</div>'
+            f'</a>'
+        )
+    return (
+        '<section class="art-read-more section" style="margin-top:48px;padding:0">'
+        '<h2 class="section-title" style="font-family:Playfair Display,serif;font-size:30px;margin:0 0 14px;font-weight:500">Читать дальше</h2>'
+        '<div class="article-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;margin-top:24px">'
+        + "".join(cards) +
+        '</div>'
+        '</section>'
+    )
 
 
 def _cross_links_html(exclude_url: str = "") -> str:
