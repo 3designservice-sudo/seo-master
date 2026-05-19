@@ -92,6 +92,34 @@ class Settings(BaseSettings):
     # При False img-блоки идут с пустым src и B рендерит placeholder.
     bamboodom_images_enabled: bool = False
 
+    # --- Designservice.group (admin-only section, 2026-05-19) ---
+    # Второй сайт студии (designservice.group). Публикуется не через
+    # серверный blog_publish (как bamboodom), а через _receiver.php — POST
+    # base64-тело создаёт файл /blog/{slug}/index.html на beget-хостинге.
+    # Темы берутся из _bot_api.php (article_roadmap.json, 391 статья).
+    designservice_enabled: bool = False
+    # Базовый URL сайта (используется в canonical, og:url, ld+json).
+    designservice_base_url: str = "https://designservice.group"
+    # Ключ для _receiver.php (заливка готового HTML файлом). См. tokens.json.
+    designservice_receiver_key: SecretStr = SecretStr("")
+    # Ключ для _bot_api.php (get_planned / get_article / mark_status).
+    designservice_bot_api_key: SecretStr = SecretStr("")
+    # Включает генерацию картинок через openrouter_image для статей DS.
+    designservice_images_enabled: bool = False
+    # Telegram-канал для анонсов опубликованных статей (опционально).
+    designservice_tg_channel: str = ""
+    designservice_tg_bot_token: SecretStr = SecretStr("")
+    # project_id из таблицы projects для общего publishers/announce flow.
+    designservice_announce_project_id: int = 0
+
+    # --- Yandex Webmaster (Designservice recrawl) ---
+    # Параллельно с bamboodom — отдельный OAuth-токен и host_id для
+    # designservice.group. Если не задано, используется общий yandex_webmaster_token.
+    yandex_webmaster_token_ds: SecretStr = SecretStr("")
+    yandex_webmaster_user_id_ds: str = ""
+    yandex_webmaster_host_id_ds: str = ""
+    yandex_webmaster_site_ds: str = "https://designservice.group"
+
     # === Server ===
     port: int = 8080
 
