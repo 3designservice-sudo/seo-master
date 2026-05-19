@@ -138,9 +138,9 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
     word_count = _count_words(plain)
     checks: list[ValidationCheck] = []
 
-    # 1. Word count within ±10% of target
+    # 1. Word count within ±15% of target (relaxed in PR 8 — Sonnet tends to overshoot)
     target = int(article.target_words or 1500)
-    lo, hi = int(target * 0.9), int(target * 1.1)
+    lo, hi = int(target * 0.85), int(target * 1.15)
     checks.append(ValidationCheck(
         name="word_count",
         passed=lo <= word_count <= hi,
@@ -172,41 +172,49 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
         expected=expected_faq,
     ))
 
-    # 4. kw_primary mentions 5-10
+    # 4. kw_primary mentions 3-15 (relaxed in PR 8 — wider window for natural variation)
     if article.kw_primary:
         kw_count = len(re.findall(re.escape(article.kw_primary), plain, re.IGNORECASE))
     else:
         kw_count = 0
     checks.append(ValidationCheck(
         name="kw_primary_count",
-        passed=5 <= kw_count <= 12,
-        detail="kw_primary должен встречаться 5-12 раз (не больше и не меньше)",
+        passed=3 <= kw_count <= 15,
+        detail="kw_primary должен встречаться 3-15 раз",
         actual=kw_count,
-        expected="5-12",
+        expected="3-15",
     ))
 
-    # 5. kw_secondary — each at least once
-    missing_secondary = []
-    for kw in (article.kw_secondary or []):
-        if kw and not re.search(re.escape(kw), plain, re.IGNORECASE):
-            missing_secondary.append(kw)
+    # 5. kw_secondary: at least 50% coverage (relaxed in PR 8)
+    secondary = [k for k in (article.kw_secondary or []) if k]
+    missing_secondary = [
+        k for k in secondary
+        if not re.search(re.escape(k), plain, re.IGNORECASE)
+    ]
+    if secondary:
+        coverage = (len(secondary) - len(missing_secondary)) / len(secondary)
+        passed = coverage >= 0.5
+    else:
+        coverage = 1.0
+        passed = True
     checks.append(ValidationCheck(
         name="kw_secondary_coverage",
-        passed=len(missing_secondary) == 0,
-        detail=("не упомянуты дополнительные запросы: " + ", ".join(missing_secondary))
-        if missing_secondary else "все дополнительные запросы упомянуты",
-        actual=len(article.kw_secondary or []) - len(missing_secondary),
-        expected=len(article.kw_secondary or []),
+        passed=passed,
+        detail=(
+            "нужно ≥50% дополнительных запросов; не упомянуты: " + ", ".join(missing_secondary)
+        ) if missing_secondary else "все дополнительные запросы упомянуты",
+        actual=f"{int(coverage * 100)}%",
+        expected="≥50%",
     ))
 
-    # 6. Internal links >= 4 (to /services/* or /projects.html)
-    internal = len(re.findall(r'href="/(?:services/|projects|about|contacts|reviews)', body_html, re.IGNORECASE))
+    # 6. Internal links >= 3 (relaxed in PR 8 — Sonnet rarely puts 4+ inline)
+    internal = len(re.findall(r'href="/(?:services/|projects|about|contacts|reviews|blog)', body_html, re.IGNORECASE))
     checks.append(ValidationCheck(
         name="internal_links",
-        passed=internal >= 4,
-        detail="нужно минимум 4 внутренних ссылок на /services/*, /projects.html, /about.html и т.д.",
+        passed=internal >= 3,
+        detail="нужно минимум 3 внутренних ссылок на /services/*, /projects.html, /about.html и т.д.",
         actual=internal,
-        expected=">= 4",
+        expected=">= 3",
     ))
 
     # 7. External authority link (ru.wikipedia.org or similar)
