@@ -294,7 +294,32 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
         except Exception as exc:
             log.warning("designservice.publish.recrawl_unexpected", err=str(exc))
 
-        # 10. TG announcement
+        # 10a. Update /blog.html article grid (insert new card first)
+        try:
+            from services.designservice_blog_index import update_blog_index
+            # Reading time estimate based on body word count
+            reading_minutes = max(1, round(draft.word_count / 180))
+            # Russian date for the card meta
+            months_ru = ["", "января", "февраля", "марта", "апреля", "мая", "июня",
+                         "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+            try:
+                y, m, d = today_iso.split("-")
+                date_ru = f"{int(d)} {months_ru[int(m)]} {y}"
+            except (ValueError, IndexError):
+                date_ru = today_iso
+            await update_blog_index(
+                article=article,
+                cover_url=cover_url or f"{settings.designservice_base_url.rstrip('/')}/Logo_DS.png",
+                reading_time=reading_minutes,
+                date_ru=date_ru,
+                http_client=http_client,
+                designservice_client=ds_client,
+                base_url=settings.designservice_base_url,
+            )
+        except Exception as exc:
+            log.warning("designservice.publish.blog_index_failed", err=str(exc))
+
+        # 10b. TG announcement
         announced = False
         if main_bot is not None:
             announced = await announce_published_article(
