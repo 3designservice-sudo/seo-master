@@ -413,9 +413,6 @@ ym(48007919,"init",{{clickmap:true,trackLinks:true,accurateTrackBounce:true,webv
 
     # Strip any backticks from article_html — they would break JS template literal.
     article_html_js_safe = article_html.replace("\\", "\\\\").replace("`", "\\`").replace("${{", "\\${{")
-    # Page title for tab + PageShell prop
-    page_title_js = json.dumps(article.h1, ensure_ascii=False)
-
     # HYBRID SSR: contents live inside <div id="root"> so server-side parsers
     # (Yandex bot, page_stats_widget, etc.) see the full article body without
     # executing JavaScript. React mount reads innerHTML and re-wraps in PageShell.
@@ -433,7 +430,7 @@ function mount(){{
   var html=root.innerHTML;
   root.innerHTML='';
   ReactDOM.createRoot(root).render(
-    e(window.PageShell, {{ pageTitle: {page_title_js}, kind: 'article' }},
+    e(window.PageShell, {{ activePage: '/blog.html' }},
       e('div', {{ dangerouslySetInnerHTML: {{ __html: html }} }})
     )
   );
