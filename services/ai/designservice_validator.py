@@ -19,20 +19,18 @@ from services.seo.humanizer import humanize_html
 # Banned AI vocabulary (sample — extended in humanizer.py)
 # ---------------------------------------------------------------------------
 
+# PR 11: reduced banned list — kept only the most egregious AI tells.
+# Conjunctive fillers ("таким образом", "при этом", "более того") removed —
+# they appear in normal Russian editorial writing and were blocking otherwise
+# good articles.
 _BANNED_AI_PHRASES = (
     "важно отметить",
     "стоит подчеркнуть",
-    "необходимо учитывать",
     "в современном мире",
     "эксперты считают",
     "исследования показывают",
     "премиальное качество",
     "одно из лучших",
-    "не просто",  # for inflated symbolism
-    "таким образом",
-    "более того",
-    "при этом",
-    "помимо этого",
 )
 
 _AUTHOR_NAME = "Александр Шульман"
@@ -204,32 +202,48 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
         expected=expected_faq,
     ))
 
-    # 4. kw_primary mentions 2-18 (PR 10: relaxed lower bound — Sonnet often inflects)
+    # 4. kw_primary mentions >= 2 (PR 11: no upper bound for stem-match — natural articles repeat root often)
     if article.kw_primary:
-        # Match both exact phrase and stem variations (e.g. "ремонт квартир" matches "ремонта квартиры")
-        # Try exact first
+        # Try exact phrase first
         kw_count = len(re.findall(re.escape(article.kw_primary), plain, re.IGNORECASE))
         if kw_count < 2:
-            # Try with main keyword (first word) — captures inflections
-            main_word = article.kw_primary.split()[0]
-            if len(main_word) >= 4:
-                kw_count = len(re.findall(re.escape(main_word), plain, re.IGNORECASE))
+            # Stem fallback: take the longest content word (≥5 chars) and match its prefix
+            words = [w for w in article.kw_primary.split() if len(w) >= 5]
+            if not words:
+                words = [w for w in article.kw_primary.split() if len(w) >= 4]
+            if words:
+                # Use stem (first N-2 chars) so 'ремонт' matches 'ремонта/ремонту/ремонтом'
+                stem = words[0][:-2] if len(words[0]) >= 6 else words[0]
+                kw_count = len(re.findall(re.escape(stem), plain, re.IGNORECASE))
     else:
         kw_count = 0
     checks.append(ValidationCheck(
         name="kw_primary_count",
-        passed=2 <= kw_count <= 18,
-        detail=f"kw_primary '{article.kw_primary}' должен встречаться 2-18 раз (с инфлексиями)",
+        passed=kw_count >= 2,
+        detail=f"kw_primary '{article.kw_primary}' должен встречаться минимум 2 раза (с инфлексиями)",
         actual=kw_count,
-        expected="2-18",
+        expected=">= 2",
     ))
 
-    # 5. kw_secondary: at least 50% coverage (relaxed in PR 8)
+    # 5. kw_secondary: stem-based fuzzy ≥50% coverage (PR 11)
     secondary = [k for k in (article.kw_secondary or []) if k]
-    missing_secondary = [
-        k for k in secondary
-        if not re.search(re.escape(k), plain, re.IGNORECASE)
-    ]
+
+    def _fuzzy_present(phrase: str) -> bool:
+        # Take meaningful content words (≥5 chars), check if at least 50% of stems
+        # appear in plain text. Stem = first len-2 chars (or full word if <6).
+        words = [w for w in phrase.split() if len(w) >= 5]
+        if not words:
+            words = [w for w in phrase.split() if len(w) >= 4]
+        if not words:
+            return bool(re.search(re.escape(phrase), plain, re.IGNORECASE))
+        present_count = 0
+        for w in words:
+            stem = w[:-2] if len(w) >= 6 else w
+            if re.search(re.escape(stem), plain, re.IGNORECASE):
+                present_count += 1
+        return present_count / len(words) >= 0.5
+
+    missing_secondary = [k for k in secondary if not _fuzzy_present(k)]
     if secondary:
         coverage = (len(secondary) - len(missing_secondary)) / len(secondary)
         passed = coverage >= 0.5
@@ -240,7 +254,8 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
         name="kw_secondary_coverage",
         passed=passed,
         detail=(
-            "нужно ≥50% дополнительных запросов; не упомянуты: " + ", ".join(missing_secondary)
+            "нужно ≥50% дополнительных запросов (fuzzy match по корням); не упомянуты: "
+            + ", ".join(missing_secondary)
         ) if missing_secondary else "все дополнительные запросы упомянуты",
         actual=f"{int(coverage * 100)}%",
         expected="≥50%",
