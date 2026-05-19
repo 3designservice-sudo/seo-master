@@ -276,3 +276,58 @@ class DesignserviceArticleService:
             word_count=draft.word_count,
         )
         return draft
+
+    async def generate_and_validate(
+        self,
+        article: Any,
+        *,
+        current_date_iso: str,
+        max_retries: int = _MAX_VALIDATION_RETRIES,
+    ) -> tuple[DesignserviceArticleDraft, "ValidationResult"]:
+        """Generate article, validate via DesignserviceValidator, retry on fail.
+
+        Args:
+            article: roadmap Article model.
+            current_date_iso: e.g. "2026-05-19".
+            max_retries: number of additional regenerations after first attempt.
+                Default 2 → 3 total attempts.
+
+        Returns:
+            (draft, validation_result) — draft is best attempt, validation_result
+            includes .ok flag and .feedback_messages() for blocking decisions.
+
+        Note:
+            On the final iteration, if validation still fails, the LAST draft
+            is returned (caller decides to block or publish anyway based on .ok).
+            GRAD requirement: only result.ok == True should be published.
+        """
+        from services.ai.designservice_validator import validate_article
+
+        retry_feedback: list[str] = []
+        draft: DesignserviceArticleDraft | None = None
+        result = None
+        for attempt in range(max_retries + 1):
+            draft = await self.generate(
+                article,
+                current_date_iso=current_date_iso,
+                retry_feedback=retry_feedback if retry_feedback else None,
+            )
+            result = validate_article(article, draft.body_html)
+            log.info(
+                "designservice.validate",
+                attempt=attempt + 1,
+                article_id=getattr(article, "id", "?"),
+                ok=result.ok,
+                score=result.score,
+                failed=[c.name for c in result.failed],
+                humanizer=result.humanizer_score,
+            )
+            if result.ok:
+                draft.attempts = attempt + 1
+                return draft, result
+            retry_feedback = result.feedback_messages()
+        # All retries exhausted — return last draft + last result; caller decides.
+        if draft is not None and result is not None:
+            draft.attempts = max_retries + 1
+            return draft, result
+        raise DesignserviceGenerationError("generate_and_validate produced no draft")
