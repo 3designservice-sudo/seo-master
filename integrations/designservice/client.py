@@ -164,6 +164,33 @@ class DesignserviceClient:
         )
         return a
 
+    async def recent_published(
+        self,
+        limit: int = 3,
+        exclude_id: int = 0,
+    ) -> list[Article]:
+        """Get last N published articles, sorted by published_date desc.
+
+        Used by pipeline 'Читать дальше' block. Server-side scan over the full
+        roadmap (not range-limited). exclude_id excludes the current article.
+        """
+        try:
+            data = await self._bot_api({
+                "action": "recent_published",
+                "limit": str(limit),
+                "exclude_id": str(exclude_id),
+            })
+        except DesignserviceAPIError:
+            return []
+        items = data.get("articles") or []
+        result = []
+        for item in items:
+            try:
+                result.append(Article.model_validate(item))
+            except Exception:
+                continue
+        return result
+
 
     # ---- write API ---------------------------------------------------------
 

@@ -196,25 +196,13 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                 log.warning("designservice.publish.inline_images_failed", err=str(exc))
 
         # 6b. Fetch 3 most recent published articles for «Читать дальше» block
+        # (PR 24: uses dedicated server endpoint instead of range-scan)
         recent_articles: list[dict] = []
         try:
-            # Fetch all to find published; bot_api has no dedicated 'list published'
-            # endpoint, so we use stats + iterating get_article on published candidates.
-            # In practice we use a small probe — newest article IDs near current.
-            stats_resp = await ds_client.stats()
-            # The roadmap doesn't return list of published from stats —
-            # fallback: scan IDs from current-10 to current+30 looking for published
-            current_id = article.id
+            recent_pub_list = await ds_client.recent_published(limit=3, exclude_id=article.id)
             seen_pub: list[dict] = []
-            candidate_ids = list(range(max(1, current_id - 30), current_id + 30))
-            # Exclude current
-            candidate_ids = [i for i in candidate_ids if i != current_id]
-            for cid in candidate_ids:
-                if len(seen_pub) >= 3:
-                    break
-                try:
-                    a = await ds_client.get_article(cid)
-                    if a.status == "published" and a.published_url:
+            for a in recent_pub_list:
+                if a.published_url:
                         cover = f"{settings.designservice_base_url.rstrip('/')}/blog/{a.target_url.strip('/').removeprefix('blog/').rstrip('/')}/cover.webp"
                         # Reading time estimate (180 wpm)
                         rt_mins = max(1, round((a.word_count or 1500) / 180))
@@ -244,8 +232,6 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                             "category": category,
                             "reading_time": f"{rt_mins} мин",
                         })
-                except Exception:
-                    continue
             recent_articles = seen_pub
         except Exception as exc:
             log.warning("designservice.publish.recent_fetch_failed", err=str(exc))
