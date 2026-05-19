@@ -139,10 +139,26 @@ async def generate_and_publish_cover(
         Absolute URL of /blog/{slug}/cover.webp on success, else None.
     """
     prompt = _build_cover_prompt(article)
-    slug = (article.target_url or "").strip("/").removeprefix("blog/")
+    slug = (article.target_url or "").strip("/").removeprefix("blog/").rstrip("/")
     if not slug:
         log.warning("designservice.cover.no_slug", article_id=getattr(article, "id", "?"))
         return None
+
+    # 0. CACHE CHECK (PR 31): if cover.webp already exists for this slug, reuse it.
+    # Saves Gemini API call on retries / blocked articles re-attempting.
+    existing_url = f"{base_url.rstrip('/')}/blog/{slug}/cover.webp"
+    try:
+        r = await http_client.head(existing_url, timeout=10.0)
+        if r.status_code == 200:
+            log.info(
+                "designservice.cover.cache_hit",
+                slug=slug,
+                url=existing_url,
+                article_id=getattr(article, "id", "?"),
+            )
+            return existing_url
+    except Exception:
+        pass  # fall through to generation
 
     # 1. Generate image via Gemini
     try:
