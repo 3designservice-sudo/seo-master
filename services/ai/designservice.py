@@ -165,17 +165,28 @@ def _parse_draft(raw_reply: str) -> DesignserviceArticleDraft:
     """
     text = raw_reply.strip()
 
-    # 1. Look for ```html ... ```
+    # 1. Look for ```html ... ``` (closed fence)
     m = re.search(r"```html\s*\n?(.*?)\n?```", text, re.DOTALL | re.IGNORECASE)
     if m:
         body_html = m.group(1).strip()
     else:
-        # 2. Any fenced block
+        # 2. Any closed fenced block
         m = re.search(r"```[a-zA-Z]*\s*\n?(.*?)\n?```", text, re.DOTALL)
         if m:
             body_html = m.group(1).strip()
+        # 3. PR 34: UNTERMINATED ```html (LLM cut off at max_tokens) —
+        # take everything after the opening fence
+        elif "```html" in text.lower():
+            m = re.search(r"```html\s*\n?(.*)", text, re.DOTALL | re.IGNORECASE)
+            if m:
+                body_html = m.group(1).strip()
+                # Strip trailing partial fence if any
+                if body_html.endswith("```"):
+                    body_html = body_html[:-3].rstrip()
+            else:
+                body_html = text
         elif text.lstrip().startswith("<"):
-            # 3. Looks like raw HTML
+            # 4. Raw HTML without fence
             body_html = text
         else:
             raise DesignserviceGenerationError(
