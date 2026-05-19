@@ -53,6 +53,7 @@ def _build_post_text(
     excerpt: str,
     content_type: str,
     extra_text: str = "",
+    site_name: str = "bamboodom.ru",
 ) -> str:
     """Текст поста для соц. сетей. content_type: telegram_html / pin_text / plain_text.
 
@@ -70,7 +71,7 @@ def _build_post_text(
             parts.append("")
             parts.append(extra_text.strip()[:700])
         parts.append("")
-        parts.append(f'<a href="{url}">Читать на bamboodom.ru</a>')
+        parts.append(f'<a href="{url}">Читать на {site_name}</a>')
         return "\n".join(parts)
     # plain text для VK / pin_text для Pinterest
     parts = [title.strip()]
@@ -95,12 +96,24 @@ async def announce_to_social(
     excerpt: str = "",
     image_url: str = "",
     extra_text: str = "",
+    project_id_override: int = 0,
+    site_name: str = "bamboodom.ru",
+    dedicated_tg_attr: str = "bamboodom_tg_channel",
+    source_tag: str = "bamboodom_announce",
 ) -> dict[str, str]:
     """Шлёт анонс во все привязанные платформы. Graceful degrade.
 
+    Args:
+        project_id_override: project_id для не-bamboodom вызовов (designservice).
+            Если 0 — используется settings.bamboodom_announce_project_id (default).
+        site_name: 'Читать на {site_name}' в подписи поста.
+        dedicated_tg_attr: имя атрибута в settings для dedicated TG channel
+            (используется чтобы пропустить duplicate-postинг в TG).
+        source_tag: метка для logging/metadata.
+
     Возвращает map платформа → результат («ok» / причина skip).
     """
-    project_id = getattr(settings, "bamboodom_announce_project_id", 0) or 0
+    project_id = project_id_override or getattr(settings, "bamboodom_announce_project_id", 0) or 0
     if not project_id:
         return {p: "skip:no_project_id" for p in PLATFORMS}
 
@@ -115,7 +128,7 @@ async def announce_to_social(
     # 5C (2026-04-27): если задан BAMBOODOM_TG_CHANNEL — telegram-анонс уходит
     # через announce_article (отдельный путь с dedicated bot), connection-based
     # путь для telegram пропускаем чтобы не было двойных постов в одном канале.
-    bbk_tg_channel_set = bool((getattr(settings, "bamboodom_tg_channel", "") or "").strip())
+    bbk_tg_channel_set = bool((getattr(settings, dedicated_tg_attr, "") or "").strip())
 
     results: dict[str, str] = {}
     for platform in PLATFORMS:
@@ -150,12 +163,12 @@ async def announce_to_social(
 
         request = PublishRequest(
             connection=connection,
-            content=_build_post_text(title, url, excerpt, content_type, extra_text=extra_text),
+            content=_build_post_text(title, url, excerpt, content_type, extra_text=extra_text, site_name=site_name),
             content_type=content_type,
             images=[image_bytes] if image_bytes else [],
             images_meta=[{"alt": title[:100]}] if image_bytes else [],
             title=title[:120],
-            metadata={"source": "bamboodom_announce", "article_url": url},
+            metadata={"source": source_tag, "article_url": url},
         )
 
         on_refresh = make_token_refresh_cb(db, connection.id, enc_key)

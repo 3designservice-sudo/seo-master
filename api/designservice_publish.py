@@ -335,6 +335,33 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
         except Exception as exc:
             log.warning("designservice.publish.blog_index_failed", err=str(exc))
 
+                # 10c. Cross-post to VK / Pinterest via configured connections (PR 32).
+        # Requires DESIGNSERVICE_ANNOUNCE_PROJECT_ID + project with VK/Pinterest
+        # connections set up by admin.
+        social_results: dict[str, str] = {}
+        try:
+            from services.announce.social import announce_to_social
+            ann_pid = getattr(settings, "designservice_announce_project_id", 0) or 0
+            if ann_pid:
+                db = request.app.get("supabase")
+                if db is not None:
+                    social_results = await announce_to_social(
+                        db=db,
+                        http_client=http_client,
+                        settings=settings,
+                        title=article.h1,
+                        url=published_url,
+                        excerpt=article.meta_description,
+                        image_url=cover_url or "",
+                        project_id_override=ann_pid,
+                        site_name="designservice.group",
+                        dedicated_tg_attr="designservice_tg_channel",
+                        source_tag="designservice_announce",
+                    )
+                    log.info("designservice.publish.social_results", results=social_results)
+        except Exception as exc:
+            log.warning("designservice.publish.social_failed", err=str(exc))
+
         # 10b. TG announcement
         announced = False
         if main_bot is not None:
