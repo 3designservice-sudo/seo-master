@@ -343,8 +343,11 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
             from services.announce.social import announce_to_social
             ann_pid = getattr(settings, "designservice_announce_project_id", 0) or 0
             if ann_pid:
-                db = request.app.get("supabase")
+                db = request.app.get("db")
                 if db is not None:
+                    log.info("designservice.publish.social_attempt", project_id=ann_pid)
+                else:
+                    log.warning("designservice.publish.social_no_db", note="app['db'] missing")
                     social_results = await announce_to_social(
                         db=db,
                         http_client=http_client,
