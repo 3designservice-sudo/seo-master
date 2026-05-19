@@ -235,6 +235,60 @@ def _author_block_html() -> str:
 </section>"""
 
 
+def inject_yoast_keyword(body_html: str, h1: str) -> str:
+    """Ensure the Yoast focus keyword (first 2 content words of h1) appears in:
+      - first <p class="art-lead">
+      - at least one <h2>
+    If LLM didn't include them, do a soft inject. This guarantees the Yoast
+    widget checks pass without depending on LLM compliance.
+
+    Description is handled separately by _ensure_description_length.
+    """
+    if not body_html or not h1:
+        return body_html
+
+    # Compute focus keyword: first 2 content words of h1 (length >= 3)
+    words = [w for w in re.findall(r"[А-Яа-яA-Za-zЁё0-9]+", h1) if len(w) >= 3]
+    if len(words) < 2:
+        return body_html
+    yoast_kw = " ".join(words[:2])
+    yoast_kw_lower = yoast_kw.lower()
+
+    # 1. Check art-lead — inject if missing
+    lead_pattern = re.compile(
+        r'(<p[^>]*class="[^"]*art-lead[^"]*"[^>]*>)(.+?)(</p>)',
+        re.IGNORECASE | re.DOTALL,
+    )
+    m = lead_pattern.search(body_html)
+    if m:
+        lead_inner = m.group(2)
+        if yoast_kw_lower not in re.sub(r"<[^>]+>", " ", lead_inner).lower():
+            # Inject as opening: "Yoast_KW — original lead"
+            new_inner = f"{yoast_kw} — {lead_inner.lstrip()}"
+            body_html = body_html[: m.start()] + m.group(1) + new_inner + m.group(3) + body_html[m.end():]
+
+    # 2. Check h2 — find first h2, inject if yoast_kw is absent in ALL h2
+    h2_pattern = re.compile(r"(<h2[^>]*>)(.+?)(</h2>)", re.IGNORECASE | re.DOTALL)
+    all_h2 = list(h2_pattern.finditer(body_html))
+    if all_h2:
+        any_h2_has_kw = any(
+            yoast_kw_lower in re.sub(r"<[^>]+>", " ", m.group(2)).lower()
+            for m in all_h2
+        )
+        if not any_h2_has_kw:
+            # Inject yoast_kw as prefix of FIRST h2
+            first = all_h2[0]
+            first_inner = first.group(2)
+            new_h2_inner = f"{yoast_kw}: {first_inner.lstrip()}"
+            body_html = (
+                body_html[: first.start()]
+                + first.group(1) + new_h2_inner + first.group(3)
+                + body_html[first.end():]
+            )
+
+    return body_html
+
+
 def _read_more_html(items: list[dict] | None) -> str:
     """Build «Читать дальше» block with up to 3 article-card previews.
 

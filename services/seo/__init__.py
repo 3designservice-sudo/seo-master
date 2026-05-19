@@ -8,7 +8,7 @@ Public surface:
         respects script/style/anchor attributes (untouchable zones).
 """
 
-from services.seo.designservice_html import render_article
+from services.seo.designservice_html import inject_yoast_keyword, render_article
 from services.seo.humanizer import humanize_html
 
-__all__ = ["humanize_html", "render_article"]
+__all__ = ["humanize_html", "inject_yoast_keyword", "render_article"]

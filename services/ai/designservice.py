@@ -316,6 +316,13 @@ class DesignserviceArticleService:
         )
 
         draft = _parse_draft(raw)
+        # PR 30: inject yoast_keyword (h1 prefix) into lead/h2 if LLM forgot.
+        # Guarantees widget Yoast checks pass without LLM compliance dependency.
+        try:
+            from services.seo import inject_yoast_keyword
+            draft.body_html = inject_yoast_keyword(draft.body_html, article.h1)
+        except Exception as exc:
+            log.warning("designservice.inject_yoast_failed", err=str(exc))
         draft.model_used = model_used
         if retry_feedback:
             draft.retry_feedback = list(retry_feedback)
