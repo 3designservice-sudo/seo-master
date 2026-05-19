@@ -280,6 +280,91 @@ class DesignserviceClient:
             raw_response=text,
         )
 
+    async def publish_image(
+        self,
+        slug: str,
+        image_bytes: bytes,
+        *,
+        name: str = "cover.webp",
+    ) -> PublishResult:
+        """POST base64-encoded image → file blog/{slug}/{name} on beget.
+
+        Used by services.designservice_images.cover for blog hero images.
+        Stored alongside index.html in the same /blog/{slug}/ directory so
+        article + cover are indexed together.
+
+        Args:
+            slug: URL slug (without /blog/ prefix).
+            image_bytes: raw binary content (e.g. WebP 1024x576).
+            name: filename relative to blog/{slug}/, default 'cover.webp'.
+
+        Returns:
+            PublishResult with dst_path and bytes_written.
+
+        Raises:
+            DesignserviceAuthError on 403.
+            DesignserviceReceiverError on _receiver.php 404.
+            DesignservicePublishError on non-OK response.
+        """
+        if not self.receiver_key:
+            raise DesignserviceAuthError("DESIGNSERVICE_RECEIVER_KEY not configured")
+        if not slug or "/" in slug or ".." in slug:
+            raise DesignservicePublishError(f"invalid slug: {slug!r}")
+        if not name or "/" in name or ".." in name:
+            raise DesignservicePublishError(f"invalid filename: {name!r}")
+        if not image_bytes:
+            raise DesignservicePublishError("empty image bytes")
+
+        dst = f"blog/{slug}/{name}"
+        b64_body = base64.b64encode(image_bytes)
+        url = f"{self.base_url}/_receiver.php"
+        params = {"k": self.receiver_key, "p": dst}
+
+        owned = self.http_client is None
+        client = await self._get_client()
+        try:
+            r = await client.post(
+                url, params=params, content=b64_body, timeout=_PUBLISH_TIMEOUT
+            )
+        finally:
+            if owned:
+                await client.aclose()
+
+        if r.status_code == 403:
+            raise DesignserviceAuthError("forbidden by _receiver.php")
+        if r.status_code == 404:
+            raise DesignserviceReceiverError(
+                "_receiver.php returned 404 — restore from HOWTO_large_files_via_receiver.md"
+            )
+        if r.status_code >= 400:
+            raise DesignservicePublishError(
+                f"_receiver.php HTTP {r.status_code}: {r.text[:200]}"
+            )
+
+        text = r.text.strip()
+        if not text.startswith("OK "):
+            raise DesignservicePublishError(f"unexpected body: {text[:200]!r}")
+
+        bytes_written = 0
+        try:
+            parts = text.split()
+            bytes_written = int(parts[1])
+        except (IndexError, ValueError):
+            pass
+
+        log.info(
+            "designservice.publish_image",
+            slug=slug,
+            name=name,
+            bytes=bytes_written,
+        )
+        return PublishResult(
+            ok=True,
+            dst_path=dst,
+            bytes_written=bytes_written,
+            raw_response=text,
+        )
+
     # ---- ping / smoke-test -------------------------------------------------
 
     async def ping(self) -> bool:
