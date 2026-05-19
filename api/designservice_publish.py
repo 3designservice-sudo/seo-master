@@ -162,8 +162,9 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                 }
             )
 
-        # 5. Generate cover image
+        # 5. Generate cover image (also init openrouter_img for inline use)
         cover_url: str | None = None
+        openrouter_img: OpenRouterImageClient | None = None
         if settings.designservice_images_enabled:
             try:
                 openrouter_img = OpenRouterImageClient(
@@ -179,8 +180,25 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
             except Exception as exc:
                 log.warning("designservice.publish.cover_failed", err=str(exc))
 
-        # 6. Humanizer pass + render
-        body_html, hum_stats = humanize_html(draft.body_html, max_em_dash_per_1k=8)
+        # 6a. Generate 6 inline images and inject between h2 sections
+        body_html_with_images = draft.body_html
+        if settings.designservice_images_enabled and openrouter_img is not None:
+            try:
+                from services.designservice_images import enrich_with_inline_images
+                body_html_with_images = await enrich_with_inline_images(
+                    article,
+                    draft.body_html,
+                    openrouter_image_client=openrouter_img,
+                    designservice_client=ds_client,
+                    http_client=http_client,
+                    max_images=6,
+                    base_url=settings.designservice_base_url,
+                )
+            except Exception as exc:
+                log.warning("designservice.publish.inline_images_failed", err=str(exc))
+
+        # 6b. Humanizer pass + render
+        body_html, hum_stats = humanize_html(body_html_with_images, max_em_dash_per_1k=8)
         full_html = render_article(
             article,
             body_html,

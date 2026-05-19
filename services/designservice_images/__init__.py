@@ -7,5 +7,6 @@ Public surface:
 """
 
 from services.designservice_images.cover import generate_and_publish_cover
+from services.designservice_images.inline_images import enrich_with_inline_images
 
-__all__ = ["generate_and_publish_cover"]
+__all__ = ["enrich_with_inline_images", "generate_and_publish_cover"]
