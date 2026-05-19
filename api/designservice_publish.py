@@ -136,6 +136,22 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                 await ds_client.mark_blocked(article.id, reason[:500])
             except DesignserviceAPIError:
                 pass
+            # TG notification — let GRAD know which checks failed
+            if main_bot is not None:
+                try:
+                    from services.announce.designservice_tg import announce_blocked_article
+                    await announce_blocked_article(
+                        main_bot=main_bot,
+                        settings=settings,
+                        article_id=article.id,
+                        title=article.h1,
+                        score=result.score,
+                        failed_checks=failed_names,
+                        humanizer_score=result.humanizer_score,
+                        attempts=draft.attempts,
+                    )
+                except Exception as exc:
+                    log.warning("designservice.publish.announce_blocked_failed", err=str(exc))
             return web.json_response(
                 {
                     "status": "blocked",
