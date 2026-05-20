@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 from typing import Any
 
@@ -110,6 +111,31 @@ def _build_post_text(
     return "\n".join(parts)
 
 
+def _build_pin_description(title: str, url: str, alt: str, excerpt: str = "") -> str:
+    """Описание для одного Pinterest-пина.
+
+    Каждое фото статьи даёт пин со СВОИМ описанием (alt картинки), плюс общий
+    хвост с заголовком статьи и ссылкой. Так пины не дублируются.
+    """
+    parts = []
+    a = (alt or "").strip()
+    t = (title or "").strip()
+    if a and a.lower() != t.lower():
+        parts.append(a)
+    parts.append(t)
+    if excerpt:
+        parts.append(excerpt.strip()[:400])
+    parts.append(url)
+    # dedupe, keep order
+    seen = set()
+    out = []
+    for p in parts:
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return "\n\n".join(out)[:800]
+
+
 async def announce_to_social(
     *,
     db: Any,
@@ -124,6 +150,7 @@ async def announce_to_social(
     site_name: str = "bamboodom.ru",
     dedicated_tg_attr: str = "bamboodom_tg_channel",
     source_tag: str = "bamboodom_announce",
+    pinterest_images: list[dict] | None = None,
 ) -> dict[str, str]:
     """Шлёт анонс во все привязанные платформы. Graceful degrade.
 
@@ -190,17 +217,67 @@ async def announce_to_social(
         # в личную страницу).
         for connection in active:
             label = f"{platform}:{connection.identifier or connection.id}"
+            on_refresh = make_token_refresh_cb(db, connection.id, enc_key)
+            try:
+                publisher = create_publisher(platform, http_client, settings, on_token_refresh=on_refresh)
+            except Exception as exc:
+                log.warning("announce_publisher_init_failed", platform=platform, conn=label, exc_info=True)
+                results[label] = f"error:{exc}"
+                continue
 
-            # Картинка под платформу:
-            #  - pinterest: только PNG (webp отклоняется API v5); нет PNG → skip
-            #  - vk: PNG предпочтительно, webp как fallback
-            #  - telegram: исходные байты (но telegram тут обычно skip)
+            # ── Pinterest: ОТДЕЛЬНЫЙ пин на КАЖДОЕ фото статьи ──
+            # 5-9 пинов на статью, у каждого своё описание (alt картинки) и
+            # ссылка на статью. Список картинок приходит в pinterest_images
+            # [{"url","alt"}]; если пуст — fallback на одну обложку.
             if platform == "pinterest":
-                plat_image = png_image_bytes
-                if not plat_image:
+                pin_imgs = pinterest_images or ([{"url": image_url, "alt": title}] if image_url else [])
+                if not pin_imgs:
                     results[label] = "skip:no_image"
                     continue
-            elif platform == "vk":
+                ok_n, fail_n, skip_n = 0, 0, 0
+                first_err = ""
+                for idx, im in enumerate(pin_imgs):
+                    raw = await _fetch_image_bytes(http_client, im.get("url", ""))
+                    png = _to_png(raw)
+                    if not png:
+                        skip_n += 1
+                        continue
+                    alt = (im.get("alt") or title).strip()
+                    desc = _build_pin_description(title, url, alt, excerpt)
+                    req = PublishRequest(
+                        connection=connection,
+                        content=desc,
+                        content_type="pin_text",
+                        images=[png],
+                        images_meta=[{"alt": alt[:100]}],
+                        title=title[:120],
+                        metadata={
+                            "source": source_tag,
+                            "article_url": url,
+                            "link": url,
+                            "pin_title": (alt or title)[:100],
+                        },
+                    )
+                    try:
+                        r = await publisher.publish(req)
+                    except Exception as exc:
+                        fail_n += 1
+                        first_err = first_err or str(exc)
+                        log.warning("announce_pin_failed", conn=label, idx=idx, exc_info=True)
+                        continue
+                    if r.success:
+                        ok_n += 1
+                        log.info("announce_pin_sent", conn=label, idx=idx, post_url=r.post_url)
+                    else:
+                        fail_n += 1
+                        first_err = first_err or (r.error or "unknown")
+                        log.warning("announce_pin_fail", conn=label, idx=idx, error=r.error)
+                    await asyncio.sleep(1.0)  # лёгкая пауза между пинами (anti-spam)
+                results[label] = f"pins ok={ok_n} fail={fail_n} skip={skip_n}" + (f" err={first_err}" if first_err else "")
+                continue
+
+            # ── VK / Telegram: один пост с обложкой ──
+            if platform == "vk":
                 plat_image = png_image_bytes or image_bytes
             else:
                 plat_image = image_bytes
@@ -216,10 +293,7 @@ async def announce_to_social(
                 title=title[:120],
                 metadata={"source": source_tag, "article_url": url},
             )
-
-            on_refresh = make_token_refresh_cb(db, connection.id, enc_key)
             try:
-                publisher = create_publisher(platform, http_client, settings, on_token_refresh=on_refresh)
                 result = await publisher.publish(request)
             except Exception as exc:
                 log.warning("announce_publish_failed", platform=platform, conn=label, exc_info=True)
