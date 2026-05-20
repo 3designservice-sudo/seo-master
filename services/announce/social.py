@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import io
 from typing import Any
 
 import httpx
@@ -44,6 +45,29 @@ async def _fetch_image_bytes(http_client: httpx.AsyncClient, url: str) -> bytes 
         return resp.content
     except (httpx.HTTPError, OSError) as exc:
         log.warning("announce_image_fetch_failed", url=url[:80], error=str(exc)[:120])
+        return None
+
+
+def _to_png(raw: bytes | None) -> bytes | None:
+    """Конвертирует любые байты картинки в PNG.
+
+    Pinterest API v5 (media_source.image_base64) принимает только image/jpeg и
+    image/png — НЕ webp. Обложки designservice генерятся в WebP, поэтому без
+    конвертации Pinterest отклоняет пин. VK тоже надёжнее принимает PNG.
+    """
+    if not raw:
+        return None
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(raw))
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception as exc:  # noqa: BLE001 — graceful degrade, любая ошибка PIL
+        log.warning("announce_png_convert_failed", error=str(exc)[:120])
         return None
 
 
@@ -108,10 +132,12 @@ async def announce_to_social(
             Если 0 — используется settings.bamboodom_announce_project_id (default).
         site_name: 'Читать на {site_name}' в подписи поста.
         dedicated_tg_attr: имя атрибута в settings для dedicated TG channel
-            (используется чтобы пропустить duplicate-postинг в TG).
+            (используется чтобы пропустить duplicate-постинг в TG).
         source_tag: метка для logging/metadata.
 
-    Возвращает map платформа → результат («ok» / причина skip).
+    Возвращает map «платформа:identifier» → результат («ok» / причина skip).
+    Если у платформы несколько подключений (напр. VK личная + группа) —
+    постит во все и возвращает отдельный результат по каждому.
     """
     project_id = project_id_override or getattr(settings, "bamboodom_announce_project_id", 0) or 0
     if not project_id:
@@ -124,6 +150,10 @@ async def announce_to_social(
     image_bytes: bytes | None = None
     if image_url:
         image_bytes = await _fetch_image_bytes(http_client, image_url)
+
+    # WebP-обложку конвертируем в PNG: Pinterest v5 webp не принимает,
+    # VK надёжнее работает с png. Telegram идёт отдельным путём (см. ниже).
+    png_image_bytes: bytes | None = _to_png(image_bytes)
 
     # 5C (2026-04-27): если задан BAMBOODOM_TG_CHANNEL — telegram-анонс уходит
     # через announce_article (отдельный путь с dedicated bot), connection-based
@@ -146,12 +176,6 @@ async def announce_to_social(
         if not active:
             results[platform] = "skip:no_connection"
             continue
-        connection = active[0]
-
-        # Pinterest требует image_url; без неё skip-аем
-        if platform == "pinterest" and not image_bytes:
-            results[platform] = "skip:no_image"
-            continue
 
         # Готовим content_type под платформу
         if platform == "telegram":
@@ -161,30 +185,52 @@ async def announce_to_social(
         else:
             content_type = "pin_text"
 
-        request = PublishRequest(
-            connection=connection,
-            content=_build_post_text(title, url, excerpt, content_type, extra_text=extra_text, site_name=site_name),
-            content_type=content_type,
-            images=[image_bytes] if image_bytes else [],
-            images_meta=[{"alt": title[:100]}] if image_bytes else [],
-            title=title[:120],
-            metadata={"source": source_tag, "article_url": url},
-        )
+        # Постим во ВСЕ активные подключения платформы (раньше брали только
+        # active[0] — из-за этого VK-группа игнорировалась, постилось только
+        # в личную страницу).
+        for connection in active:
+            label = f"{platform}:{connection.identifier or connection.id}"
 
-        on_refresh = make_token_refresh_cb(db, connection.id, enc_key)
-        try:
-            publisher = create_publisher(platform, http_client, settings, on_token_refresh=on_refresh)
-            result = await publisher.publish(request)
-        except Exception as exc:
-            log.warning("announce_publish_failed", platform=platform, exc_info=True)
-            results[platform] = f"error:{exc}"
-            continue
+            # Картинка под платформу:
+            #  - pinterest: только PNG (webp отклоняется API v5); нет PNG → skip
+            #  - vk: PNG предпочтительно, webp как fallback
+            #  - telegram: исходные байты (но telegram тут обычно skip)
+            if platform == "pinterest":
+                plat_image = png_image_bytes
+                if not plat_image:
+                    results[label] = "skip:no_image"
+                    continue
+            elif platform == "vk":
+                plat_image = png_image_bytes or image_bytes
+            else:
+                plat_image = image_bytes
 
-        if result.success:
-            results[platform] = f"ok:{result.post_url or result.platform_post_id or ''}"
-            log.info("announce_sent", platform=platform, post_url=result.post_url)
-        else:
-            results[platform] = f"fail:{result.error or 'unknown'}"
-            log.warning("announce_publisher_fail", platform=platform, error=result.error)
+            request = PublishRequest(
+                connection=connection,
+                content=_build_post_text(
+                    title, url, excerpt, content_type, extra_text=extra_text, site_name=site_name
+                ),
+                content_type=content_type,
+                images=[plat_image] if plat_image else [],
+                images_meta=[{"alt": title[:100]}] if plat_image else [],
+                title=title[:120],
+                metadata={"source": source_tag, "article_url": url},
+            )
+
+            on_refresh = make_token_refresh_cb(db, connection.id, enc_key)
+            try:
+                publisher = create_publisher(platform, http_client, settings, on_token_refresh=on_refresh)
+                result = await publisher.publish(request)
+            except Exception as exc:
+                log.warning("announce_publish_failed", platform=platform, conn=label, exc_info=True)
+                results[label] = f"error:{exc}"
+                continue
+
+            if result.success:
+                results[label] = f"ok:{result.post_url or result.platform_post_id or ''}"
+                log.info("announce_sent", platform=platform, conn=label, post_url=result.post_url)
+            else:
+                results[label] = f"fail:{result.error or 'unknown'}"
+                log.warning("announce_publisher_fail", platform=platform, conn=label, error=result.error)
 
     return results
