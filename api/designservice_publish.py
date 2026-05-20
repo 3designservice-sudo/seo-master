@@ -73,6 +73,76 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
     async with httpx.AsyncClient() as http_client:
         ds_client = DesignserviceClient(http_client=http_client)
 
+        # ── ANNOUNCE-ONLY режим ──
+        # Body {"announce_only_id": N}: пропустить генерацию/валидацию, взять уже
+        # опубликованную статью с её готовыми фото и прогнать cross-post
+        # (VK + Pinterest мульти-пин). Обход блокировок валидатора.
+        _vb = request.get("verified_body") or {}
+        _announce_id = _vb.get("announce_only_id")
+        if _announce_id:
+            try:
+                art = await ds_client.get_article(int(_announce_id))
+            except Exception as exc:
+                return web.json_response(
+                    {"status": "error", "stage": "announce_only_get", "error": str(exc)}, status=500
+                )
+            base = settings.designservice_base_url.rstrip("/")
+            slug = (art.target_url or f"/blog/{art.id}/").strip("/").removeprefix("blog/").rstrip("/")
+            pub_url = art.published_url or f"{base}/blog/{slug}/"
+            cover_url = f"{base}/blog/{slug}/cover.webp"
+            pinterest_images: list[dict] = [{"url": cover_url, "alt": art.h1}]
+            try:
+                _r = await http_client.get(pub_url, timeout=20)
+                if _r.status_code == 200:
+                    for _m in re.finditer(r"<img\b[^>]*>", _r.text):
+                        _tag = _m.group(0)
+                        _s = re.search(r'src="([^"]+)"', _tag)
+                        if not _s or "/blog/" not in _s.group(1):
+                            continue
+                        _u = _s.group(1)
+                        if any(_u == p["url"] for p in pinterest_images):
+                            continue
+                        _a = re.search(r'alt="([^"]*)"', _tag)
+                        pinterest_images.append({"url": _u, "alt": (_a.group(1) if _a else art.h1)})
+            except Exception as exc:
+                log.warning("designservice.announce_only.html_fetch_failed", err=str(exc))
+            ann_pid = getattr(settings, "designservice_announce_project_id", 0) or 0
+            db = request.app.get("db")
+            if not ann_pid or db is None:
+                return web.json_response(
+                    {"status": "error", "stage": "announce_only", "error": "no project_id or db"}, status=500
+                )
+            from services.announce.social import announce_to_social
+            social_results = await announce_to_social(
+                db=db,
+                http_client=http_client,
+                settings=settings,
+                title=art.h1,
+                url=pub_url,
+                excerpt=art.meta_description,
+                image_url=cover_url,
+                project_id_override=ann_pid,
+                site_name="designservice.group",
+                dedicated_tg_attr="designservice_tg_channel",
+                source_tag="designservice_announce",
+                pinterest_images=pinterest_images,
+            )
+            log.info(
+                "designservice.announce_only.results",
+                article_id=_announce_id,
+                n_images=len(pinterest_images),
+                results=social_results,
+            )
+            return web.json_response(
+                {
+                    "status": "announced",
+                    "article_id": _announce_id,
+                    "url": pub_url,
+                    "images": len(pinterest_images),
+                    "social_results": social_results,
+                }
+            )
+
         try:
             article = await ds_client.get_next_for_pipeline()
         except DesignserviceAPIError as exc:
