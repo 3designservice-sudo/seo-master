@@ -21,6 +21,7 @@ Pipeline (each invocation publishes ONE article):
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 import httpx
@@ -345,7 +346,23 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
             if ann_pid:
                 db = request.app.get("db")
                 if db is not None:
-                    log.info("designservice.publish.social_attempt", project_id=ann_pid)
+                    # Собираем ВСЕ фото статьи для Pinterest: обложка + inline.
+                    # Каждое фото → отдельный пин со своим описанием (alt) и
+                    # ссылкой на статью (5-9 пинов на статью).
+                    pinterest_images: list[dict] = []
+                    if cover_url:
+                        pinterest_images.append({"url": cover_url, "alt": article.h1})
+                    for _m in re.finditer(r"<img\b[^>]*>", body_html_with_images):
+                        _tag = _m.group(0)
+                        _src = re.search(r'src="([^"]+)"', _tag)
+                        if not _src or "/blog/" not in _src.group(1):
+                            continue
+                        _alt = re.search(r'alt="([^"]*)"', _tag)
+                        pinterest_images.append({
+                            "url": _src.group(1),
+                            "alt": (_alt.group(1) if _alt else article.h1),
+                        })
+                    log.info("designservice.publish.social_attempt", project_id=ann_pid, pin_images=len(pinterest_images))
                     social_results = await announce_to_social(
                         db=db,
                         http_client=http_client,
@@ -358,6 +375,7 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                         site_name="designservice.group",
                         dedicated_tg_attr="designservice_tg_channel",
                         source_tag="designservice_announce",
+                        pinterest_images=pinterest_images,
                     )
                     log.info("designservice.publish.social_results", results=social_results)
                 else:
