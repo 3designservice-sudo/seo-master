@@ -34,7 +34,34 @@ _DEFAULT_AUTHOR = {
     "url": "https://designservice.group/about.html",
     "jobTitle": "Директор ООО «Дизайн-Сервис»",
     "initials": "АШ",
+    "avatar": "/img/author-shulman.webp",
 }
+
+# DS_FOOTER_v1: SSR footer mirroring shared.js ContactFooter+PageFooter components.
+# Injected inside <div id=root>; mount script passes hideFooter:true so PageShell
+# doesn't render a second copy on JS-enabled clients.
+_SSR_FOOTER_HTML = (
+    '<div class="ds-ssr-footer-v1">'
+    '<div class="contact-footer">'
+    '<div class="contact-footer-left">'
+    '<h3>Начнём ваш проект?</h3>'
+    '<p>Первая консультация бесплатно. Приедем, обмеряем, посчитаем.</p>'
+    '</div>'
+    '<div class="contact-footer-right">'
+    '<div class="cf-item"><div class="cf-label">Телефон</div>'
+    '<a href="tel:+79780223222">+7 (978) 022-32-22</a></div>'
+    '<div class="cf-item"><div class="cf-label">Email</div>'
+    '<a href="mailto:info@designservice.group">info@designservice.group</a></div>'
+    '<div class="cf-item"><div class="cf-label">Telegram</div>'
+    '<a href="https://t.me/designservice_group" target="_blank">@designservice</a></div>'
+    '</div></div>'
+    '<footer class="page-footer">'
+    '<span>2015 — 2026 © ООО «Дизайн-Сервис». Все права защищены.</span>'
+    '<div style="display:flex;gap:16px">'
+    '<a href="/privacy.html">Политика конфиденциальности</a>'
+    '<a href="/terms.html">Пользовательское соглашение</a>'
+    '</div></footer></div>'
+)
 
 _PUBLISHER = {
     "name": "Дизайн-Сервис",
@@ -489,7 +516,7 @@ ym(48007919,"init",{{clickmap:true,trackLinks:true,accurateTrackBounce:true,webv
 
     # Article HTML as JS template literal — wrapped by React PageShell at runtime.
     # Mirror pattern used by existing /blog/*/index.html.
-    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(meta_description)}</p><div class="art-meta"><span class="art-author"><span class="art-author-initials">{_DEFAULT_AUTHOR['initials']}</span><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_read_more_html(recent_articles)}{_cross_links_html(exclude_url=article.service_url)}</div>"""
+    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(meta_description)}</p><div class="art-meta"><span class="art-author"><img class="art-author-avatar" src="{_DEFAULT_AUTHOR['avatar']}" alt="{_escape(_DEFAULT_AUTHOR['name'])}" width="84" height="84" loading="lazy"><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_read_more_html(recent_articles)}{_cross_links_html(exclude_url=article.service_url)}</div>"""
 
     # Strip any backticks from article_html — they would break JS template literal.
     article_html_js_safe = article_html.replace("\\", "\\\\").replace("`", "\\`").replace("${{", "\\${{")
@@ -499,7 +526,7 @@ ym(48007919,"init",{{clickmap:true,trackLinks:true,accurateTrackBounce:true,webv
     #   PageShell wrapping <main class="main-content"> (matches existing
     #   site's blog template so footer/sidebar render correctly)
     body = f"""<body class="art-page">
-<div id="root">{article_html}</div>
+<div id="root">{article_html}{_SSR_FOOTER_HTML}</div>
 <script>
 (function(){{
 var e=React.createElement;
@@ -511,7 +538,7 @@ function mount(){{
   var ARTICLE_HTML = root.innerHTML;
   root.innerHTML = '';
   function Page(){{
-    return e(window.PageShell, {{ activePage: '/blog.html' }},
+    return e(window.PageShell, {{ activePage: '/blog.html', hideFooter: true }},
       e('main', {{ className: 'main-content', dangerouslySetInnerHTML: {{ __html: ARTICLE_HTML }} }})
     );
   }}
