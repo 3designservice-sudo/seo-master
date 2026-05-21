@@ -125,7 +125,8 @@ def _build_pin_description(title: str, url: str, alt: str, excerpt: str = "") ->
     parts.append(t)
     if excerpt:
         parts.append(excerpt.strip()[:400])
-    parts.append(url)
+    # URL НЕ добавляем в описание: Pinterest не делает его кликабельным.
+    # Ссылка на статью уходит в поле назначения пина (metadata["link"]).
     # dedupe, keep order
     seen = set()
     out = []
