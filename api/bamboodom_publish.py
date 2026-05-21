@@ -205,9 +205,24 @@ async def bamboodom_publish_handler(request: web.Request) -> web.Response:
             await _roadmap_mark(http_client, blog_key, aid, "blocked")
             return web.json_response({"status": "blocked", "id": aid, "failed_checks": failed})
 
-        # 4. Публикация (production). draft -> payload; фиксируем наш slug.
+        # 4. Картинки ДО публикации (slug из роадмапа): генерим, заливаем, заполняем cover.
         payload = draft.to_publish_payload()
         payload["slug"] = slug
+        cover_url = ""
+        if getattr(settings, "bamboodom_images_enabled", False):
+            try:
+                counter = await generate_article_images(
+                    slug=slug, blocks=payload["blocks"],
+                    http_client=http_client, settings=settings, material=category,
+                )
+                if isinstance(counter, dict) and counter.get("ok", 0) > 0:
+                    cover_url = _hero_src_from_blocks(payload["blocks"])
+                    if cover_url:
+                        payload["cover"] = cover_url
+            except Exception as exc:
+                log.warning("bamboodom.publish.images_failed", id=aid, err=str(exc))
+
+        # 5. Публикация (production) — ОДИН раз, с заполненными blocks + cover (без републиша).
         try:
             pub = await bd_client.publish(payload, sandbox=False)
         except BamboodomAPIError as exc:
@@ -217,24 +232,6 @@ async def bamboodom_publish_handler(request: web.Request) -> web.Response:
                                       "error": str(exc)}, status=500)
         published_slug = getattr(pub, "slug", slug) or slug
         published_url = f"{_SITE}/article.html?slug={published_slug}"
-
-        # 5. Картинки: генерим под img-блоки и републишим (cover = hero)
-        cover_url = ""
-        if getattr(settings, "bamboodom_images_enabled", False):
-            try:
-                counter = await generate_article_images(
-                    slug=published_slug, blocks=payload["blocks"],
-                    http_client=http_client, settings=settings, material=category,
-                )
-                if isinstance(counter, dict) and counter.get("ok", 0) > 0:
-                    cover_url = _hero_src_from_blocks(payload["blocks"])
-                    new_payload = dict(payload)
-                    new_payload["blocks"] = payload["blocks"]
-                    if cover_url:
-                        new_payload["cover"] = cover_url
-                    await bd_client.publish(new_payload, sandbox=False)
-            except Exception as exc:
-                log.warning("bamboodom.publish.images_failed", id=aid, err=str(exc))
 
         # 6. sitemap + переобход Яндекс
         try:
