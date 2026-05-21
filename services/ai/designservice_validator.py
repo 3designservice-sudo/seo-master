@@ -180,7 +180,9 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
     # Sonnet 4.5 reliably overshoots target — writes 1700-1800 even when target=1400.
     # Allow -15% on lower side (close to target), +30% on upper (Sonnet's comfort zone).
     target = int(article.target_words or 1500)
-    lo, hi = int(target * 0.85), int(target * 1.30)
+    # PR: нижний порог ослаблен 0.85 → 0.70 — короткие типы (FAQ «N вопросов»,
+    # сравнения, чек-листы) законно короче лонгрида и не должны блокироваться.
+    lo, hi = int(target * 0.70), int(target * 1.30)
     checks.append(ValidationCheck(
         name="word_count",
         passed=lo <= word_count <= hi,
@@ -206,10 +208,10 @@ def validate_article(article: Any, body_html: str) -> ValidationResult:
     expected_faq = int(article.faq_entries or 3)
     checks.append(ValidationCheck(
         name="faq_count",
-        passed=faq == expected_faq,
-        detail=f"нужно ровно {expected_faq} FAQ-блоков (<details class=\"faq\">)",
+        passed=faq >= expected_faq,
+        detail=f"нужно минимум {expected_faq} FAQ-блоков (<details class=\"faq\">); больше — допустимо",
         actual=faq,
-        expected=expected_faq,
+        expected=f">= {expected_faq}",
     ))
 
     # 4. kw_primary mentions >= 2 (PR 11: no upper bound for stem-match — natural articles repeat root often)
