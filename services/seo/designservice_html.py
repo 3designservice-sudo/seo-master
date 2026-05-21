@@ -401,6 +401,22 @@ def _cross_links_html(exclude_url: str = "") -> str:
 </section>"""
 
 
+def _expand_faq_details(body_html: str) -> str:
+    """DS_FAQ_VISIBLE_v1: render FAQ as visible Q+A instead of a collapsed
+    <details> accordion so readers see answers without clicking. The FAQPage
+    ld+json is built earlier from the original markup, so SEO is unaffected."""
+    if "<details" not in body_html:
+        return body_html
+    pat = re.compile(
+        r"<details[^>]*>\s*<summary[^>]*>(.*?)</summary>\s*(.*?)\s*</details>",
+        re.IGNORECASE | re.DOTALL,
+    )
+    return pat.sub(
+        lambda m: '<h3 class="faq-q">' + m.group(1).strip() + "</h3>" + m.group(2).strip(),
+        body_html,
+    )
+
+
 def render_article(
     article: "Article",
     body_html: str,
@@ -446,6 +462,8 @@ def render_article(
     faq_items = _extract_faq_from_body(body_html)
     if faq_items:
         ld_scripts.append(_json_ld_script(_build_faq_ld(faq_items)))
+    # DS_FAQ_VISIBLE_v1: expand FAQ accordions to visible Q+A for human readers
+    body_html = _expand_faq_details(body_html)
 
     # Head section — mirror existing /blog/*/index.html pattern (COFAB_NO_FOUC + shared.js)
     head = f"""<!DOCTYPE html>
