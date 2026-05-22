@@ -116,14 +116,24 @@ async def _global_error_handler(event: ErrorEvent) -> bool:
     if isinstance(event.exception, AppError):
         user_message = event.exception.user_message
 
-    # Try to send error message to user
+    # Try to notify the user, but NEVER let a notification failure escape this
+    # handler. A failing notification (stale "query is too old" callback, user
+    # blocked the bot, etc.) would propagate out of the error handler, make the
+    # /webhook endpoint return HTTP 500, and cause Telegram to redeliver the same
+    # update in an endless retry loop — the bot appears "frozen".
     update = event.update
-    if update and update.message:
-        await update.message.answer(user_message)
-    elif update and update.callback_query:
-        await update.callback_query.answer(user_message[:200], show_alert=True)
-    elif update and update.pre_checkout_query:
-        await update.pre_checkout_query.answer(ok=False, error_message=user_message[:255])
+    try:
+        if update and update.message:
+            await update.message.answer(user_message)
+        elif update and update.callback_query:
+            await update.callback_query.answer(user_message[:200], show_alert=True)
+        elif update and update.pre_checkout_query:
+            await update.pre_checkout_query.answer(ok=False, error_message=user_message[:255])
+    except TelegramBadRequest as notify_exc:
+        # Stale callback query / message too old / cannot edit — nothing to do.
+        log.warning("error_notify_failed", reason=str(notify_exc))
+    except Exception:
+        log.warning("error_notify_failed_unexpected", exc_info=True)
 
     return True  # error handled, don't propagate
 
