@@ -712,6 +712,14 @@ class ArticleService:
                 existing_lsi = context.get("lsi_keywords", "")
                 context["lsi_keywords"] = f"{existing_lsi}, {ac_text}" if existing_lsi else ac_text
 
+        # Guided-flow track 1: optional content-angle for topic diversity.
+        # Inert unless content_angle_rotation_enabled is True AND the active
+        # article prompt renders << content_angle >>.
+        from bot.config import get_settings
+        if get_settings().content_angle_rotation_enabled:
+            from services.ai.content_angles import select_angle
+            context["content_angle"] = select_angle(keyword).instruction
+
         branding_dict = {"text": text_color, "accent": accent_color}
         return context, main_phrase, secondary_phrases, branding_dict
 

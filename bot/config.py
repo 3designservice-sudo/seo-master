@@ -131,6 +131,12 @@ class Settings(BaseSettings):
     max_regenerations_free: int = 2
     railway_graceful_shutdown_timeout: int = 120
 
+    # === Feature flags (guided-flow) ===
+    # Track 1: controlled content-angle rotation around the niche. OFF by
+    # default. Activation also requires the DB article prompt to render
+    # << content_angle >>.
+    content_angle_rotation_enabled: bool = False
+
     @field_validator("admin_ids", mode="before")
     @classmethod
     def _parse_admin_ids(cls, v: str | list[int]) -> list[int]:
