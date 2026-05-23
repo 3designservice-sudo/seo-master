@@ -77,8 +77,8 @@ _MAX_JSON_RETRIES = 1  # strict JSON parse retry budget (per side B §Б1)
 _MAX_VALIDATION_RETRIES = 2  # v14 (2026-04-26): up to 2 retries (3 attempts) for full checklist
 
 # Word-count policy from ARTICLE_LENGTH_POLICY.md (v5 prompt)
-_MIN_WORDS_HARD = 1500
-_MIN_WORDS_SOFT = 1400  # 4M: soft warning, статья публикуется но с пометкой
+_MIN_WORDS_HARD = 1150
+_MIN_WORDS_SOFT = 1050  # 4M: soft warning, статья публикуется но с пометкой
 _MAX_WORDS_HARD = 2200
 _TARGET_WORDS_MIN = 1700
 _TARGET_WORDS_MAX = 1900
