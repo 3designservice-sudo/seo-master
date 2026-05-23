@@ -81,6 +81,7 @@ def _main_screen_text(*, has_platforms: bool = False) -> str:
     desc = S.CONTENT_SETTINGS_DESC if has_platforms else S.CONTENT_SETTINGS_NO_PLATFORMS
     return (
         Screen(E.SLIDERS, S.CONTENT_SETTINGS_TITLE)
+        .progress(3, 5, "Текст и фото")
         .blank()
         .line(desc)
         .hint(S.CONTENT_SETTINGS_HINT)

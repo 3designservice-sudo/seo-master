@@ -141,6 +141,7 @@ async def start_create(
 
     text = (
         Screen(E.FOLDER, S.PROJECT_CREATE_TITLE)
+        .progress(1, 5, "Проект")
         .blank()
         .line(S.PROJECT_CREATE_QUESTION)
         .hint(S.PROJECT_CREATE_HINT)

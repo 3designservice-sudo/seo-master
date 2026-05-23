@@ -70,6 +70,7 @@ def _build_checklist_text(report: ReadinessReport, fsm_data: dict) -> str:  # ty
     category_name = html.escape(fsm_data.get("category_name", ""))
 
     s = Screen(E.DOC, S.PIPELINE_READINESS_TITLE)
+    s.progress(4, 5, "Готовность")
     s.blank()
     s.line(f"{E.FOLDER} Проект: {project_name}")
     s.line(f"{E.HASHTAG} Тема: {category_name}")

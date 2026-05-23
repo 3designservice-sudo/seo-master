@@ -69,5 +69,20 @@ class Screen:
         self._lines.append(SEPARATOR)
         return self
 
+    def progress(self, step: int, total: int, label: str = "") -> Screen:
+        """Prepend a progress indicator: 'Этап N из M · label' + dots.
+
+        Presentation only (guided-flow PR-1). Inserted above the title so it
+        appears at the very top of the screen.
+        """
+        dots = "\u25cf" * max(0, step) + "\u25cb" * max(0, total - step)
+        head = f"Этап {step} из {total}"
+        if label:
+            head += f" \u00b7 {label}"
+        self._lines.insert(0, "")
+        self._lines.insert(0, dots)
+        self._lines.insert(0, f"<i>{head}</i>")
+        return self
+
     def build(self) -> str:
         return "\n".join(self._lines)

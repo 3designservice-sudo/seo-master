@@ -207,6 +207,7 @@ async def start_category_create(
 
     text = (
         Screen(E.FOLDER, S.CATEGORY_CREATE_TITLE)
+        .progress(2, 5, "Категория")
         .blank()
         .line(S.CATEGORY_CREATE_PROMPT)
         .hint(S.CATEGORY_CREATE_EXAMPLE)

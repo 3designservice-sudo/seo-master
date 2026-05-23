@@ -77,6 +77,7 @@ async def scheduler_entry(
     project_id = int(cb_data.split(":")[1])
     text = (
         Screen(E.SCHEDULE, S.SCHEDULER_TITLE)
+        .progress(5, 5, "Автопубликация")
         .blank()
         .line(S.SCHEDULER_TYPE_PROMPT)
         .hint(S.SCHEDULER_TYPE_HINT)
