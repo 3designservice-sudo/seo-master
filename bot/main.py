@@ -329,6 +329,12 @@ def create_app() -> web.Application:
         dispatcher=dp,
         bot=bot,
         secret_token=settings.telegram_webhook_secret.get_secret_value(),
+        # Process updates in a background task so the /webhook endpoint returns
+        # 200 immediately. Otherwise Telegram waits for the whole handler to
+        # finish; a long AI generation (30-120s) exceeds Telegram's ~60s webhook
+        # timeout, Telegram redelivers the same update, and we get duplicate
+        # generations + stale "query is too old" callbacks + an apparent freeze.
+        handle_in_background=True,
     )
     webhook_handler.register(app, path="/webhook")
     setup_application(app, dp, bot=bot)
