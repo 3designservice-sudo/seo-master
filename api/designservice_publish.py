@@ -43,6 +43,7 @@ from services.ai.designservice import DesignserviceArticleService
 from services.announce.designservice_tg import announce_published_article
 from services.designservice_images import generate_and_publish_cover
 from services.seo import humanize_html, inject_yoast_keyword, render_article
+from services.seo.designservice_html import _compose_meta
 
 log = structlog.get_logger()
 
@@ -119,7 +120,7 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                 settings=settings,
                 title=art.h1,
                 url=pub_url,
-                excerpt=art.meta_description,
+                excerpt=_compose_meta(art),
                 image_url=cover_url,
                 project_id_override=ann_pid,
                 site_name="designservice.group",
@@ -309,7 +310,7 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                             "published_url": a.published_url,
                             "cover_url": cover,
                             "published_date": a.published_date,
-                            "excerpt": a.meta_description or "",
+                            "excerpt": _compose_meta(a),
                             "category": category,
                             "reading_time": f"{rt_mins} мин",
                         })
@@ -439,7 +440,7 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                         settings=settings,
                         title=article.h1,
                         url=published_url,
-                        excerpt=article.meta_description,
+                        excerpt=_compose_meta(article),
                         image_url=cover_url or "",
                         project_id_override=ann_pid,
                         site_name="designservice.group",
@@ -461,7 +462,7 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
                 settings=settings,
                 title=article.h1,
                 url=published_url,
-                excerpt=article.meta_description,
+                excerpt=_compose_meta(article),
                 cover_url=cover_url,
                 score=result.score,
                 word_count=draft.word_count,
