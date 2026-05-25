@@ -99,7 +99,7 @@ def _build_blogposting_ld(article: "Article", url: str, cover_url: str, date_iso
         "@context": "https://schema.org",
         "@type": "BlogPosting",
         "headline": article.h1,
-        "description": article.meta_description,
+        "description": _compose_meta(article),
         "url": url,
         "image": cover_url,
         "datePublished": date_iso,
@@ -417,6 +417,110 @@ def _expand_faq_details(body_html: str) -> str:
     )
 
 
+# DS_CLEAN_META_v1: clean meta-description + visible lead, composed from article fields
+# (replaces use of article.meta_description, which carried internal customer_pain text)
+_CITY_PREP = {
+    "Симферополь": "Симферополе", "Севастополь": "Севастополе", "Ялта": "Ялте",
+    "Керчь": "Керчи", "Евпатория": "Евпатории", "Феодосия": "Феодосии",
+    "Алушта": "Алуште", "Джанкой": "Джанкое", "Саки": "Саках", "Бахчисарай": "Бахчисарае",
+}
+
+
+def _city_prep(geo: str) -> str:
+    return _CITY_PREP.get((geo or "").strip(), (geo or "Крым").strip())
+
+
+def _svc_cap(svc: str) -> str:
+    svc = (svc or "").strip()
+    return svc[:1].upper() + svc[1:] if svc else "Услуга"
+
+
+def _svc_low(svc: str) -> str:
+    svc = (svc or "").strip()
+    if len(svc) >= 2 and svc[1].isupper():
+        return svc
+    return svc[:1].lower() + svc[1:] if svc else svc
+
+
+def _compose_meta(article) -> str:
+    svc = _svc_cap(article.service_label or "")
+    geo = (article.geo or "Крым").strip()
+    kind = article.kind or "info_basic"
+    if kind == "local_guide":
+        d = f"{svc} в {_city_prep(geo)}: цены 2026, сроки, этапы и местная специфика. Реальные кейсы и расчёт под ключ — студия «Дизайн-Сервис», Крым."
+    elif kind == "info_basic":
+        d = f"{svc} в Крыму: что входит в услугу, из чего складывается цена, какие документы вы получаете и сроки. Разбор от студии «Дизайн-Сервис»."
+    elif kind == "faq_basic":
+        d = f"{svc}: 20 частых вопросов и понятных ответов — цена, сроки, гарантии и подводные камни. Отвечает студия «Дизайн-Сервис», Крым."
+    elif kind == "compare_party":
+        d = f"{svc} в Крыму: студия, частный мастер или бригада — сравнение по цене, гарантиям и рискам. Как выбрать и не переплатить — «Дизайн-Сервис»."
+    elif kind == "compare_segment":
+        d = f"{svc}: эконом, комфорт или премиум — за что вы платите на каждом уровне и чем они отличаются. Разбор по сметам от студии «Дизайн-Сервис»."
+    elif kind == "compare_diy":
+        d = f"{svc} своими руками или с подрядчиком: где реально сэкономить, а где потерять деньги. Трезвый разбор от студии «Дизайн-Сервис», Крым."
+    elif kind == "info_stages":
+        d = f"{svc}: пошаговый план от замера до сдачи — что и в каком порядке делается. Понятная схема этапов от студии «Дизайн-Сервис», Крым."
+    elif kind == "info_cost":
+        d = f"{svc} в Крыму: из чего складывается цена в 2026 году, реальные диапазоны и как избежать доплат сверх сметы. Считает студия «Дизайн-Сервис»."
+    elif kind == "info_guarantees":
+        d = f"{svc}: какие гарантии даёт студия, как они закрепляются в договоре и как защититься от рисков. Объясняет «Дизайн-Сервис», Крым."
+    elif kind == "info_under_key":
+        d = f"{svc} под ключ: что реально входит в состав работ, а что считают допами. Полный перечень и как читать смету — «Дизайн-Сервис», Крым."
+    elif kind == "info_terms":
+        d = f"{svc}: реальные сроки по типам объектов и что на них влияет. Как спланировать переезд без срывов — данные студии «Дизайн-Сервис», Крым."
+    elif kind == "pain_checklist":
+        d = f"{svc}: чек-лист подготовки — что продумать и собрать до старта, чтобы ничего не упустить. Советы от студии «Дизайн-Сервис», Крым."
+    elif kind == "pain_remote":
+        d = f"{svc} удалённо: как контролировать процесс из другого города — отчёты, фото, приёмка этапов. Опыт студии «Дизайн-Сервис», Крым."
+    elif kind in ("trends", "climate"):
+        d = f"{svc} в Крыму: тренды, материалы и климатические нюансы 2026 года. Практический разбор от студии «Дизайн-Сервис»."
+    elif kind == "case_zhk":
+        d = f"{svc} в {_city_prep(geo)}: реальный кейс — планировка, материалы, бюджет и сроки. Проект студии «Дизайн-Сервис», Крым."
+    else:
+        h1 = (article.h1 or "").strip().rstrip(".")
+        d = f"{h1}. Цены, сроки и этапы, реальные кейсы по Крыму — студия «Дизайн-Сервис», с 1997 года."
+    return " ".join(d.split())
+
+
+def _compose_lead(article) -> str:
+    svl = _svc_low(article.service_label or "")
+    geo = (article.geo or "Крым").strip()
+    kind = article.kind or "info_basic"
+    if kind == "local_guide":
+        d = f"Разбираем {svl} в {_city_prep(geo)}: из чего складывается цена в 2026 году, сроки, этапы и на что влияет местный климат и рынок."
+    elif kind == "info_basic":
+        d = f"Объясняем простыми словами: что такое {svl}, что входит в работу, как считается цена и какие документы вы получаете на руки."
+    elif kind == "faq_basic":
+        d = f"Собрали 20 вопросов, которые чаще всего задают про {svl} — и ответили на каждый без воды: цена, сроки, гарантии, материалы."
+    elif kind == "compare_party":
+        d = f"Сравниваем три варианта для задачи «{svl}» — студия, частный мастер или бригада: где дешевле, где надёжнее и чем рискуете."
+    elif kind == "compare_segment":
+        d = "Чем эконом отличается от комфорта и премиума и за что вы реально платите на каждом уровне — на примере смет."
+    elif kind == "compare_diy":
+        d = f"Считаем, что выгоднее: делать {svl} самому или с подрядчиком, где можно сэкономить, а где легко уйти в минус."
+    elif kind == "info_stages":
+        d = "Показываем весь путь от первого замера до сдачи объекта: какие этапы идут друг за другом и что происходит на каждом."
+    elif kind == "info_cost":
+        d = "Откуда берётся цена в 2026 году, какие диапазоны реальны для Крыма и как не попасть на доплаты сверх сметы."
+    elif kind == "info_guarantees":
+        d = "Какие гарантии реально даёт студия, как они прописываются в договоре и что делать, чтобы защитить свои деньги."
+    elif kind == "info_under_key":
+        d = "Что на самом деле входит в формулировку «под ключ», какие работы считают допами и как правильно читать смету."
+    elif kind == "info_terms":
+        d = "Реальные сроки по разным типам объектов и что их растягивает — чтобы спокойно спланировать переезд или сдачу."
+    elif kind == "pain_checklist":
+        d = "Чек-лист подготовки: что продумать, собрать и согласовать до старта, чтобы потом не переделывать и не нервничать."
+    elif kind == "pain_remote":
+        d = f"Как вести {svl} из другого города: фотоотчёты, видеосвязь, приёмка этапов и контроль без личного присутствия."
+    elif kind in ("trends", "climate"):
+        d = f"Что важно знать про {svl} в крымском климате: актуальные тренды, материалы и решения, которые работают на побережье."
+    elif kind == "case_zhk":
+        d = f"Реальный кейс: {svl} в {_city_prep(geo)} — как решали планировку, какие материалы выбрали и во что вышел бюджет."
+    else:
+        d = f"Практический разбор темы «{(article.h1 or '').strip()}» от студии «Дизайн-Сервис», Крым."
+    return " ".join(d.split())
+
+
 def render_article(
     article: "Article",
     body_html: str,
@@ -450,9 +554,8 @@ def render_article(
         date_iso = f"{date_part}T10:00:00+03:00"
 
     # Ensure description meets Yoast 100-180 chars requirement
-    meta_description = _ensure_description_length(
-        article.meta_description, article.h1, article.kw_primary or ""
-    )
+    meta_description = _compose_meta(article)
+    lead = _compose_lead(article)
 
     # ld+json blocks
     ld_scripts = [
@@ -534,7 +637,7 @@ ym(48007919,"init",{{clickmap:true,trackLinks:true,accurateTrackBounce:true,webv
 
     # Article HTML as JS template literal — wrapped by React PageShell at runtime.
     # Mirror pattern used by existing /blog/*/index.html.
-    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(meta_description)}</p><div class="art-meta"><span class="art-author"><img class="art-author-avatar" src="{_DEFAULT_AUTHOR['avatar']}" alt="{_escape(_DEFAULT_AUTHOR['name'])}" width="84" height="84" loading="lazy"><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_read_more_html(recent_articles)}{_cross_links_html(exclude_url=article.service_url)}</div>"""
+    article_html = f"""<div class="art-progress"><div class="art-progress-fill"></div></div><div class="art-wrap"><div class="art-breadcrumbs">{breadcrumbs_html}</div><header class="art-header"><div class="art-tags"><span class="art-tag">{_escape(article.kw_primary)}</span><span class="art-tag">{_escape(article.service_label or "Блог")}</span></div><h1 class="art-title">{_escape(article.h1)}</h1><p class="art-excerpt">{_escape(lead)}</p><div class="art-meta"><span class="art-author"><img class="art-author-avatar" src="{_DEFAULT_AUTHOR['avatar']}" alt="{_escape(_DEFAULT_AUTHOR['name'])}" width="84" height="84" loading="lazy"><span class="art-author-text"><span class="art-author-name">{_escape(_DEFAULT_AUTHOR['name'])}</span><span class="art-author-job">Автор статьи • {_escape(_DEFAULT_AUTHOR['jobTitle'])}</span></span></span><span class="art-meta-dot"></span><span><time datetime="{date_iso}">{_format_date_ru(article.planned_date)}</time></span><span class="art-meta-dot"></span><span>{_reading_minutes(body_html)} мин чтения</span></div></header><img class="art-cover" src="{cover}" alt="{_escape(article.h1)}" loading="eager" fetchpriority="high"><div class="art-body">{body_html}</div>{_author_block_html()}{_read_more_html(recent_articles)}{_cross_links_html(exclude_url=article.service_url)}</div>"""
 
     # Strip any backticks from article_html — they would break JS template literal.
     article_html_js_safe = article_html.replace("\\", "\\\\").replace("`", "\\`").replace("${{", "\\${{")
