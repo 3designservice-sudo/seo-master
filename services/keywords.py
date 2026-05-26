@@ -28,6 +28,10 @@ _DATAFORSEO_SEMAPHORE = asyncio.Semaphore(5)
 _DEFAULT_LOCATION = 2804  # Ukraine
 _FALLBACK_LOCATION = 2398  # Kazakhstan
 _MAX_SUGGESTIONS = 1000  # DataForSEO API max for keyword_suggestions/related
+# Aggressive AI-zero-volume filter is skipped if it would leave fewer than
+# this many phrases total — narrow-niche safety net (Ads volume API often
+# returns 0 for real long-tail Russian queries).
+_MIN_KEEP_AFTER_FILTER = 60
 
 # Schema for AI seed normalization (structured output)
 SEED_NORMALIZE_SCHEMA: dict[str, Any] = {
@@ -179,7 +183,7 @@ class KeywordService:
         # C19: parallelize N seed requests via asyncio.gather + semaphore(5)
         locations = [_DEFAULT_LOCATION, _FALLBACK_LOCATION]
         for location in locations:
-            capped_seeds = seeds[:5]  # max 5 seeds
+            capped_seeds = seeds[:10]  # max 10 seeds (was 5; broader coverage)
             results = await self._fetch_seeds_parallel(
                 capped_seeds,
                 location,
@@ -199,10 +203,7 @@ class KeywordService:
                             }
                         )
 
-            if raw:
-                log.info("dataforseo_found", count=len(raw), location=location)
-                break
-            log.info("dataforseo_empty_location", location=location, seeds=capped_seeds)
+            log.info("dataforseo_pass", location=location, total=len(raw))
 
         # E03 fallback: DataForSEO returned nothing even with AI-normalized seeds
         if not raw:
@@ -257,7 +258,7 @@ class KeywordService:
         context = {
             "raw_count": len(raw_phrases),
             "raw_keywords_json": json.dumps(raw_phrases, ensure_ascii=False),
-            "extra_count": max(10, int(len(raw_phrases) * 0.1)),
+            "extra_count": max(60, 150 - len(raw_phrases)),
             "products": products,
             "geography": geography,
             "company_name": company_name,
@@ -351,45 +352,57 @@ class KeywordService:
 
         Keeps DataForSEO-sourced phrases (ai_suggested=False) even with volume=0,
         since they represent real (if rare) searches. Only removes AI-invented
-        phrases that DataForSEO confirms nobody searches for.
+        phrases that DataForSEO confirms nobody searches for — UNLESS doing so
+        would leave fewer than _MIN_KEEP_AFTER_FILTER phrases total. For narrow
+        niches DataForSEO's Ads-volume API often returns 0 even for real
+        long-tail queries; in that case keeping AI-suggested phrases is better
+        than wiping the whole set down to a handful.
         """
+        # First pass: compute the "would-be-kept" set without mutating originals.
+        aggressive: list[dict[str, Any]] = []
         filtered_total = 0
-        result: list[dict[str, Any]] = []
-
         for cluster in clusters:
-            original_count = len(cluster.get("phrases", []))
+            phrases = cluster.get("phrases", [])
             kept: list[dict[str, Any]] = [
-                p for p in cluster.get("phrases", []) if not (p.get("ai_suggested") and p.get("volume", 0) == 0)
+                p for p in phrases
+                if not (p.get("ai_suggested") and p.get("volume", 0) == 0)
             ]
-            filtered_total += original_count - len(kept)
+            filtered_total += len(phrases) - len(kept)
+            if kept:
+                aggressive.append({**cluster, "phrases": kept})
 
-            if not kept:
-                continue
+        kept_total = sum(len(c.get("phrases", [])) for c in aggressive)
 
-            cluster["phrases"] = kept
-            # Recalculate aggregates
-            total_vol = sum(p.get("volume", 0) for p in kept)
-            total_diff = sum(p.get("difficulty", 0) for p in kept)
-            cluster["total_volume"] = total_vol
-            cluster["avg_difficulty"] = total_diff // max(len(kept), 1)
-            # Update main_phrase if it was removed
+        # Narrow-niche safety net: skip aggressive filtering to avoid wiping it.
+        if kept_total < _MIN_KEEP_AFTER_FILTER:
+            log.info(
+                "keywords_filter_skipped_low_yield",
+                would_keep=kept_total,
+                threshold=_MIN_KEEP_AFTER_FILTER,
+                clusters=len(clusters),
+            )
+            return clusters
+
+        # Recalculate aggregates and main_phrase per cluster on the filtered set.
+        for cluster in aggressive:
+            kept = cluster["phrases"]
+            cluster["total_volume"] = sum(p.get("volume", 0) for p in kept)
+            cluster["avg_difficulty"] = sum(p.get("difficulty", 0) for p in kept) // max(len(kept), 1)
             main = cluster.get("main_phrase", "")
-            kept_phrases = {p["phrase"].lower() for p in kept}
-            if main.lower() not in kept_phrases:
+            kept_set = {p["phrase"].lower() for p in kept}
+            if main.lower() not in kept_set:
                 best = max(kept, key=lambda p: p.get("volume", 0))
                 cluster["main_phrase"] = best["phrase"]
-
-            result.append(cluster)
 
         if filtered_total:
             log.info(
                 "keywords_filtered_low_quality",
                 removed=filtered_total,
                 clusters_before=len(clusters),
-                clusters_after=len(result),
+                clusters_after=len(aggressive),
             )
 
-        return result
+        return aggressive
 
     async def generate_clusters_direct(
         self,
@@ -411,7 +424,7 @@ class KeywordService:
         context = {
             "raw_count": 0,
             "raw_keywords_json": "[]",
-            "extra_count": 50,
+            "extra_count": 120,
             "products": products,
             "geography": geography,
             "company_name": company_name,
