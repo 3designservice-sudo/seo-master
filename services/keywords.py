@@ -249,6 +249,7 @@ class KeywordService:
         geography: str,
         project_id: int,
         user_id: int,
+        target_phrases: int = 100,
     ) -> list[dict[str, Any]]:
         """Step 2: AI clustering via keywords_cluster_v3 prompt."""
         project = await ProjectsRepository(self._db).get_by_id(project_id)
@@ -258,7 +259,7 @@ class KeywordService:
         context = {
             "raw_count": len(raw_phrases),
             "raw_keywords_json": json.dumps(raw_phrases, ensure_ascii=False),
-            "extra_count": max(60, 150 - len(raw_phrases)),
+            "extra_count": max(60, target_phrases - len(raw_phrases)),
             "products": products,
             "geography": geography,
             "company_name": company_name,
@@ -347,6 +348,7 @@ class KeywordService:
     def filter_low_quality(
         self,
         clusters: list[dict[str, Any]],
+        min_keep: int | None = None,
     ) -> list[dict[str, Any]]:
         """Remove AI-suggested phrases confirmed as zero-volume by DataForSEO.
 
@@ -372,13 +374,14 @@ class KeywordService:
                 aggressive.append({**cluster, "phrases": kept})
 
         kept_total = sum(len(c.get("phrases", [])) for c in aggressive)
+        threshold = _MIN_KEEP_AFTER_FILTER if min_keep is None else max(1, min_keep)
 
         # Narrow-niche safety net: skip aggressive filtering to avoid wiping it.
-        if kept_total < _MIN_KEEP_AFTER_FILTER:
+        if kept_total < threshold:
             log.info(
                 "keywords_filter_skipped_low_yield",
                 would_keep=kept_total,
-                threshold=_MIN_KEEP_AFTER_FILTER,
+                threshold=threshold,
                 clusters=len(clusters),
             )
             return clusters
@@ -410,6 +413,7 @@ class KeywordService:
         geography: str,
         project_id: int,
         user_id: int,
+        target_phrases: int = 100,
     ) -> list[dict[str, Any]]:
         """AI-only path: generate clusters directly in ONE call (E03 fallback).
 
@@ -424,7 +428,7 @@ class KeywordService:
         context = {
             "raw_count": 0,
             "raw_keywords_json": "[]",
-            "extra_count": 120,
+            "extra_count": target_phrases,
             "products": products,
             "geography": geography,
             "company_name": company_name,

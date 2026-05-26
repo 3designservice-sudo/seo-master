@@ -332,6 +332,15 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             await callback.answer()
             return
 
+        # Parse target volume (100/200/300) from callback.data; default 100.
+        target = 100
+        if callback.data:
+            tail = callback.data.rsplit(":", 1)[-1]
+            if tail.isdigit():
+                t = int(tail)
+                if t in (100, 200, 300):
+                    target = t
+
         data = await state.get_data()
         category_id = data.get("category_id")
         project_id = data.get("project_id")
@@ -354,7 +363,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
         # UX_PIPELINE SS4a: if no company_city -- ask city first
         if not geography:
             await state.set_state(fsm.readiness_keywords_geo)
-            await state.update_data(kw_products=products, kw_mode="auto")
+            await state.update_data(kw_products=products, kw_mode="auto", kw_target=target)
 
             await safe_edit_text(
                 msg,
@@ -366,7 +375,7 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
 
         # City already set — run generation immediately
         await state.set_state(fsm.readiness_keywords_generating)
-        await state.update_data(kw_products=products, kw_geography=geography)
+        await state.update_data(kw_products=products, kw_geography=geography, kw_target=target)
 
         await safe_edit_text(msg, "Получаю реальные фразы из DataForSEO...")
         await callback.answer()
@@ -384,12 +393,18 @@ def register_readiness_subflows(router: Router, cfg: ReadinessConfig) -> dict[st
             geography=geography,
             ai_orchestrator=ai_orchestrator,
             dataforseo_client=dataforseo_client,
+            target_phrases=target,
         )
 
     router.callback_query.register(
         readiness_keywords_auto,
         fsm.readiness_check,
-        F.data == f"{prefix}:keywords:auto",
+        F.data.in_({
+            f"{prefix}:keywords:auto",
+            f"{prefix}:keywords:auto:100",
+            f"{prefix}:keywords:auto:200",
+            f"{prefix}:keywords:auto:300",
+        }),
     )
 
     async def readiness_keywords_configure(

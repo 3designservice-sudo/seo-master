@@ -202,6 +202,7 @@ async def run_keyword_generation(
     geography: str,
     ai_orchestrator: AIOrchestrator,
     dataforseo_client: DataForSEOClient,
+    target_phrases: int = 100,
 ) -> None:
     """Run keyword pipeline: fetch -> cluster -> enrich -> save.
 
@@ -248,6 +249,7 @@ async def run_keyword_generation(
                 geography=geography,
                 project_id=project_id,
                 user_id=user.id,
+                target_phrases=target_phrases,
             )
         else:
             # Step 2b: DataForSEO empty -> AI generates clusters directly
@@ -259,6 +261,7 @@ async def run_keyword_generation(
                 geography=geography,
                 project_id=project_id,
                 user_id=user.id,
+                target_phrases=target_phrases,
             )
 
         # Step 3: Enrich with metrics (~3s)
@@ -268,7 +271,7 @@ async def run_keyword_generation(
         enriched = await kw_service.enrich_clusters(clusters)
 
         # Filter AI-invented zero-volume junk
-        enriched = kw_service.filter_low_quality(enriched)
+        enriched = kw_service.filter_low_quality(enriched, min_keep=max(60, int(target_phrases * 0.6)))
 
         # Save (MERGE with existing) via CategoryService
         cat_svc = CategoryService(db=db)
@@ -754,6 +757,7 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
             products = data.get("kw_products", "")
             project_id = data.get("project_id") or data.get("kw_project_id")
             category_id = data.get("category_id") or data.get("kw_cat_id")
+            kw_target = int(data.get("kw_target") or 100)
 
             # Save city to project for future use
             if project_id:
@@ -786,6 +790,7 @@ def register_keyword_wizard(router: Router, cfg: KeywordWizardConfig) -> dict[st
                 geography=city,
                 ai_orchestrator=ai_orchestrator,
                 dataforseo_client=dataforseo_client,
+                target_phrases=kw_target,
             )
 
         router.callback_query.register(

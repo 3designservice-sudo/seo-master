@@ -532,8 +532,20 @@ def pipeline_keywords_options_kb(prefix: str = "pipeline:readiness") -> InlineKe
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Авто (100 фраз)",
-                    callback_data=f"{prefix}:keywords:auto",
+                    text="Авто · 100 фраз",
+                    callback_data=f"{prefix}:keywords:auto:100",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Авто · 200 фраз",
+                    callback_data=f"{prefix}:keywords:auto:200",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Авто · 300 фраз",
+                    callback_data=f"{prefix}:keywords:auto:300",
                 ),
             ],
             [
