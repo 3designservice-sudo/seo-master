@@ -481,10 +481,6 @@ def create_app() -> web.Application:
     # Designservice.group: QStash auto-publish (3x daily — see scripts/setup_designservice_schedule.py).
     from api.designservice_publish import designservice_publish_handler
     app.router.add_post("/api/designservice/publish", designservice_publish_handler)
-
-    # Designservice.group: Yandex.Business daily publish (1x daily 11:00 МСК via Playwright headless).
-    from api.yandex_business_publish import yandex_business_publish_handler
-    app.router.add_post("/api/yandex_business/publish", yandex_business_publish_handler)
     # Bamboodom.ru: QStash auto-publish (2x daily).
     from api.bamboodom_publish import bamboodom_publish_handler
     app.router.add_post("/api/bamboodom/publish", bamboodom_publish_handler)
