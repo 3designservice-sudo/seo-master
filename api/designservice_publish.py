@@ -360,6 +360,22 @@ async def designservice_publish_handler(request: web.Request) -> web.Response:
         except DesignserviceAPIError as exc:
             log.warning("designservice.publish.mark_published_failed", err=str(exc))
 
+        # 8.5. Add to Я.Бизнес publishing queue (DS_YABIZ_QUEUE_v1, manual publish via Chrome MCP)
+        try:
+            import os as _os_yq
+            _yq_key = _os_yq.environ.get("DESIGNSERVICE_BOT_API_KEY", "")
+            if _yq_key:
+                _yq_slug = published_url.rstrip("/").split("/")[-1]
+                async with httpx.AsyncClient(timeout=10) as _yqc:
+                    _yqr = await _yqc.post(
+                        f"{settings.designservice_base_url.rstrip('/')}/_bot_api.php",
+                        params={"action": "ya_queue_add", "k": _yq_key},
+                        json={"article_id": article.id, "slug": _yq_slug, "h1": article.h1},
+                    )
+                    log.info("designservice.ya_queue.add", status=_yqr.status_code, body=(_yqr.text or "")[:200])
+        except Exception as _yq_exc:
+            log.warning("designservice.ya_queue.add_failed", err=str(_yq_exc))
+
         # 9. Yandex Webmaster recrawl
         recrawl_ok = False
         try:
