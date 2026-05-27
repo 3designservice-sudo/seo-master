@@ -1,7 +1,12 @@
-# DS_YABIZ_NIXPACKS_v1
-# Additional install phase to set up Chromium for the Playwright headless publisher.
-# Base install (uv sync) is handled automatically by Nixpacks from pyproject.toml + uv.lock.
-# This phase runs after install and installs the browser + system deps.
+# DS_YABIZ_NIXPACKS_v2
+# Override default install phase: re-lock + sync without --locked flag,
+# so adding new deps to pyproject.toml does not require local uv lock update.
+# Then add Chromium for Playwright headless publisher.
+
+[phases.install]
+cmds = [
+  "uv sync --no-dev",
+]
 
 [phases.playwright]
 dependsOn = ["install"]
