@@ -1,0 +1,10 @@
+# DS_YABIZ_NIXPACKS_v1
+# Additional install phase to set up Chromium for the Playwright headless publisher.
+# Base install (uv sync) is handled automatically by Nixpacks from pyproject.toml + uv.lock.
+# This phase runs after install and installs the browser + system deps.
+
+[phases.playwright]
+dependsOn = ["install"]
+cmds = [
+  "uv run playwright install --with-deps chromium",
+]
