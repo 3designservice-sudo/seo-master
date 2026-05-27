@@ -27,6 +27,7 @@ dependencies = [
     "nh3>=0.2",
     # Image processing (WebP conversion, ARCHITECTURE.md §5.9)
     "pillow>=11.0",
+    "playwright>=1.40.0",
     # Excel parsing (PriceInputFSM)
     "openpyxl>=3.1",
     # Markdown → HTML (article v7 pipeline)
